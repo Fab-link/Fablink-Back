@@ -1,18 +1,14 @@
 import os
 from pathlib import Path
 from datetime import timedelta
-from .env_loader import load_environment_variables, get_environment_type, is_production, is_development, is_local
-
-# 환경변수 로드
-load_environment_variables()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'your-default-secret-key-here')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'your-default-secret-key-here')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() in ['true', '1', 'yes']
 
 # 디버그 모드에서 자세한 오류 정보 표시
 if DEBUG:
@@ -22,7 +18,8 @@ if DEBUG:
         format='%(asctime)s %(levelname)s %(name)s %(message)s'
     )
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+# ALLOWED_HOSTS 환경변수에서 로드 (쉼표로 구분)
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Application definition
 DJANGO_APPS = [
@@ -40,6 +37,7 @@ THIRD_PARTY_APPS = [
     'rest_framework_simplejwt.token_blacklist',  # JWT 블랙리스트
     'corsheaders',
     'rest_framework.authtoken',
+    'drf_spectacular',  # API 문서화
 ]
 
 LOCAL_APPS = [
@@ -80,6 +78,23 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'fablink_project.wsgi.application'
+
+# Database
+# ConfigMap/Secret의 환경변수를 사용하여 Aurora DB 연결
+DATABASES = {
+    'default': {
+        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
+        'NAME': os.getenv('DB_NAME', 'fablink'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
+        'OPTIONS': {
+            'client_encoding': 'UTF8',
+            'connect_timeout': 60,
+        },
+    }
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -124,8 +139,15 @@ MONGODB_COLLECTIONS = {
     'factory_orders': os.getenv('MONGODB_COLLECTION_FACTORY', 'factory_orders'),
 }
 
+# CORS configuration
+CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+CORS_ALLOW_CREDENTIALS = True
+
 # Django REST Framework 설정
 REST_FRAMEWORK = {
+    # API 문서화
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    
     # 카멜케이스 컨버터
     'DEFAULT_RENDERER_CLASSES': [
         'djangorestframework_camel_case.render.CamelCaseJSONRenderer',
@@ -153,6 +175,31 @@ REST_FRAMEWORK = {
     ],
     'EXCEPTION_HANDLER': 'rest_framework.views.exception_handler',
     'TEST_REQUEST_DEFAULT_FORMAT': 'json',
+}
+
+# drf-spectacular 설정 (API 문서화)
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'FabLink API',
+    'DESCRIPTION': 'AI 기반 맞춤형 의류 제작 플랫폼 FabLink의 REST API',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SCHEMA_PATH_PREFIX': '/api/',
+    'SERVERS': [
+        {
+            'url': 'https://8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com',
+            'description': 'Development Server (API Gateway)'
+        },
+        {
+            'url': 'http://localhost:8000',
+            'description': 'Local Development Server'
+        }
+    ],
+    'TAGS': [
+        {'name': 'accounts', 'description': '사용자 계정 관리'},
+        {'name': 'manufacturing', 'description': '제조 관리'},
+        {'name': 'health', 'description': '헬스체크'},
+    ],
 }
 
 # CORS 설정 (프론트엔드와 연결용)
@@ -183,13 +230,17 @@ CSRF_COOKIE_NAME = 'csrftoken'
 CSRF_COOKIE_HTTPONLY = False
 CSRF_USE_SESSIONS = False
 
-# Logging
+# Logging (컨테이너 환경 최적화)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
             'style': '{',
         },
     },
@@ -199,27 +250,21 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'django.log',
-            'formatter': 'verbose',
-        },
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': True,
         },
         'apps': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': True,
         },
     },
     'root': {
-        'handlers': ['console', 'file'],
+        'handlers': ['console'],
         'level': 'INFO',
     },
 }

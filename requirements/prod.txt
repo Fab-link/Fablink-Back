@@ -1,0 +1,22 @@
+# 운영환경용 패키지
+-r base.txt
+
+# 웹서버
+gunicorn==21.2.0
+whitenoise==6.6.0
+
+# 데이터베이스 URL 파싱
+dj-database-url==2.1.0
+
+# 캐시 (Redis)
+django-redis==5.4.0
+
+# 모니터링 및 로깅
+sentry-sdk[django]==1.38.0
+
+# 보안 및 성능
+django-ratelimit==4.1.0
+django-cachalot==2.6.1
+
+# 정적 파일 압축 (S3 사용 시에도 유용)
+django-compressor==4.4

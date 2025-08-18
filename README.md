@@ -9,6 +9,25 @@ AI 기반 맞춤형 의류 제작 플랫폼 FabLink의 Django REST API 서버입
 
 ## 🔧 환경별 설정 가이드
 
+### 📋 **환경별 설정 관리 전략**
+
+| 환경 | 설정 방식 | 환경 결정 | 관리 도구 | 용도 |
+|------|-----------|-----------|-----------|------|
+| **Local** | `.env.local` 파일 | 기본값 | `setup_env.sh` | 로컬 개발 |
+| **Dev** | ConfigMap + Secret | Docker 빌드 시 고정 | Kubernetes | 개발 서버 |
+| **Prod** | ConfigMap + Secret | Docker 빌드 시 고정 | Kubernetes | 운영 서버 |
+
+### 🎯 **핵심 개념**
+
+#### **환경 결정 방식**
+- **Local**: `DJANGO_ENV=local` (기본값)
+- **Dev**: Docker 빌드 시 `--build-arg ENV=dev` → `DJANGO_ENV=dev` 고정
+- **Prod**: Docker 빌드 시 `--build-arg ENV=prod` → `DJANGO_ENV=prod` 고정
+
+#### **설정 소스**
+- **Local**: `.env.local` 파일 → 환경변수 → Django 설정
+- **Dev/Prod**: Kubernetes ConfigMap/Secret → 환경변수 → Django 설정
+
 ### 공통 준비사항
 
 ```bash
@@ -32,18 +51,13 @@ for file in *.sh; do sed -i 's/\r$//' "$file"; chmod +x "$file"; done
 
 ### 환경별 초기 설정
 
-각 환경(local/dev/prod)별로 다음 3단계를 순서대로 실행합니다:
-
-1. **환경변수 설정** (setup_env.sh)
-2. **데이터베이스 설정** (setup_postgresql_[env].sh)
-3. **최초 빌드 실행** (first_build.sh)
-
-#### 로컬 환경 설정
+#### 로컬 환경 설정 (파일 기반)
 ```bash
-# 1. 환경변수 설정
-./scripts/setup_env.sh local
+# 1. 환경변수 설정 (.env.local 파일 생성)
+./scripts/setup_env.sh
 # => .env.local 파일 생성
-# => 기본 환경변수 설정
+# => 로컬 PostgreSQL 설정
+# => 개발 편의성 제공
 
 # 2. PostgreSQL 설치 및 DB 설정
 ./scripts/setup_postgresql_local.sh
@@ -59,45 +73,57 @@ for file in *.sh; do sed -i 's/\r$//' "$file"; chmod +x "$file"; done
 # => 기본 관리자 계정 생성
 ```
 
-#### 개발 서버 환경 설정
+#### 개발 서버 환경 설정 (Kubernetes 기반)
 ```bash
-# 1. 환경변수 설정
-./scripts/setup_env.sh dev
-# => .env.dev 파일 생성
-# => 개발 서버용 환경변수 설정
+# 1. Docker 이미지 빌드 (환경 고정)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  --build-arg ENV=dev \
+  -t 853963783084.dkr.ecr.ap-northeast-2.amazonaws.com/fablink-backend-dev:latest \
+  --push .
+# => DJANGO_ENV=dev로 고정된 이미지 생성
 
-# 2. PostgreSQL 설정 (AWS RDS)
-./scripts/setup_postgresql_dev.sh
-# => RDS 엔드포인트 입력 필요
-# => DB 접속 정보 입력 필요
-# => 개발용 DB 및 사용자 생성
-
-# 3. 최초 빌드 실행
-./scripts/first_build.sh dev
-# => 개발 서버용 패키지 설치
-# => DB 마이그레이션
-# => 정적 파일 수집
+# 2. Kubernetes 배포
+kubectl apply -k kubernetes/environments/dev/
+# => ConfigMap으로 환경변수 주입
+# => Secret으로 민감 정보 주입
+# => 자동 DB 마이그레이션
 ```
 
-#### 운영 서버 환경 설정
+#### 운영 서버 환경 설정 (Kubernetes 기반)
 ```bash
-# 1. 환경변수 설정
-./scripts/setup_env.sh prod
-# => .env.prod 파일 생성
-# => 운영 서버용 환경변수 설정
+# 1. Docker 이미지 빌드 (환경 고정)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  --build-arg ENV=prod \
+  -t 853963783084.dkr.ecr.ap-northeast-2.amazonaws.com/fablink-backend-prod:latest \
+  --push .
+# => DJANGO_ENV=prod로 고정된 이미지 생성
 
-# 2. PostgreSQL 설정 (AWS RDS)
-./scripts/setup_postgresql_prod.sh
-# => 운영 RDS 엔드포인트 입력
-# => 보안 정보 입력
-# => 운영용 DB 및 사용자 생성
+# 2. Kubernetes 배포
+kubectl apply -k kubernetes/environments/prod/
+# => 운영용 ConfigMap/Secret
+# => 보안 강화 설정
+# => 프로덕션 최적화
+```
 
-# 3. 최초 빌드 실행
-./scripts/first_build.sh prod
-# => 운영 서버용 패키지 설치
-# => DB 마이그레이션
-# => 정적 파일 수집
-# => 보안 설정 적용
+### 🔍 **환경 감지 및 설정 로드**
+
+시스템이 자동으로 환경을 감지하고 적절한 설정을 로드합니다:
+
+#### **로컬 환경 (파일 기반)**
+```python
+# fablink_project/settings/__init__.py
+🌍 Django 환경: local (Docker 빌드 시 고정)
+💻 로컬 환경 - .env 파일 로드
+🔧 환경변수 파일 로드됨: .env.local
+📦 설정 로드 완료
+```
+
+#### **Kubernetes 환경 (ConfigMap/Secret)**
+```python
+# fablink_project/settings/__init__.py  
+🌍 Django 환경: dev (Docker 빌드 시 고정)
+🚀 DEV 환경 - ConfigMap/Secret 사용
+📦 설정 로드 완료
 ```
 
 ## 🚀 빌드 가이드
@@ -115,13 +141,8 @@ for file in *.sh; do sed -i 's/\r$//' "$file"; chmod +x "$file"; done
 코드 수정 후 일반적인 빌드를 실행할 때 사용합니다.
 
 ```bash
-# 기본 사용법
-./scripts/build.sh [환경] normal
-
-# 예시
+# 로컬 환경만 지원 (dev/prod는 Docker 이미지 사용)
 ./scripts/build.sh local normal
-./scripts/build.sh dev normal
-./scripts/build.sh prod normal
 ```
 
 ### 모델 변경 빌드 (model)
@@ -136,7 +157,7 @@ Django 모델 변경 시 사용하며, 여러 옵션을 제공합니다.
 ./scripts/build.sh local model --app accounts
 
 # 3. 데이터 삭제 후 마이그레이션
-./scripts/build.sh local model --flush  # local/dev만 가능
+./scripts/build.sh local model --flush
 ```
 
 #### 모델 변경 시나리오별 가이드
@@ -169,12 +190,6 @@ Django 모델 변경 시 사용하며, 여러 옵션을 제공합니다.
 ```bash
 # ⚠️ 주의: 모든 데이터가 삭제됩니다!
 ./scripts/build.sh local rebuild
-
-# 개발 서버 (DBA 승인 필요)
-./scripts/build.sh dev rebuild
-
-# 운영 서버에서는 사용 불가
-./scripts/build.sh prod rebuild  # ❌ 에러 발생
 ```
 
 ## 🛠 새 기능 개발 가이드
@@ -281,21 +296,39 @@ class PaymentAPITest(APITestCase):
         self.assertEqual(response.status_code, 201)
 ```
 
+## 🔐 환경별 보안 고려사항
+
+### **로컬 환경**
+- `.env.local` 파일은 Git에 커밋하지 않음
+- 개발 편의성을 위한 간단한 패스워드 사용 가능
+- 로컬 데이터베이스 사용
+
+### **개발/운영 환경**
+- ConfigMap: 공개 가능한 설정값
+- Secret: 민감한 정보 (DB 패스워드, API 키 등)
+- AWS Secrets Manager 연동
+- IRSA (IAM Roles for Service Accounts) 사용
+
 ## ⚠️ 주의사항
 
-1. **운영 환경 작업 시**
-   - 데이터 삭제 작업 불가 (--flush, rebuild 옵션 사용 불가)
-   - 항상 백업 필요
-   - DBA와 사전 협의 필수
+1. **환경별 이미지 분리**
+   - Dev 이미지: `fablink-backend-dev:latest`
+   - Prod 이미지: `fablink-backend-prod:latest`
+   - 환경이 Docker 빌드 시 고정되므로 혼용 불가
 
-2. **개발 서버 작업 시**
-   - 테스트 완료 후 배포
-   - 다른 개발자와 동시 작업 주의
-
-3. **로컬 환경 작업 시**
+2. **로컬 환경 작업 시**
    - 가상환경 활성화 상태 확인
    - 최신 코드 동기화 확인
    - 브랜치 확인
+
+3. **환경변수 파일 관리**
+   - `.env.local` 파일은 Git에 커밋하지 않음
+   - 로컬 환경에서만 `.env` 파일 사용
+   - Dev/Prod 환경에서는 ConfigMap/Secret만 사용
+
+4. **설정 변경 시**
+   - 로컬: `.env.local` 파일 수정 후 재시작
+   - Dev/Prod: ConfigMap/Secret 수정 후 Pod 재시작
 
 ## 🔍 환경별 접속 정보
 
@@ -313,3 +346,68 @@ class PaymentAPITest(APITestCase):
 - https://api.fablink.com/
 - https://api.fablink.com/admin/
 - https://api.fablink.com/api/
+
+## 🚀 **배포 및 인프라**
+
+### **환경별 Docker 이미지 빌드**
+
+```bash
+# 개발 환경 이미지 빌드
+docker buildx build --platform linux/amd64,linux/arm64 \
+  --build-arg ENV=dev \
+  -t 853963783084.dkr.ecr.ap-northeast-2.amazonaws.com/fablink-backend-dev:latest \
+  --push .
+
+# 운영 환경 이미지 빌드 (향후)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  --build-arg ENV=prod \
+  -t 853963783084.dkr.ecr.ap-northeast-2.amazonaws.com/fablink-backend-prod:latest \
+  --push .
+```
+
+### **Kubernetes 배포**
+```bash
+# 개발 환경 배포
+kubectl apply -k kubernetes/environments/dev/
+
+# 운영 환경 배포 (향후)
+kubectl apply -k kubernetes/environments/prod/
+```
+
+### **배포 상태 확인**
+```bash
+# Pod 상태 확인
+kubectl get pods -n fablink-dev
+
+# 로그 확인
+kubectl logs -f deployment/fablink-backend -n fablink-dev
+
+# 서비스 상태 확인
+kubectl get svc -n fablink-dev
+```
+
+## 📁 **프로젝트 구조**
+
+```
+Fablink-Back/
+├── fablink_project/
+│   ├── settings/
+│   │   ├── __init__.py          # 환경별 분기 로직
+│   │   ├── base.py             # Django 핵심 설정
+│   │   └── env_loader.py       # 로컬 전용 .env 로더
+│   └── wsgi.py
+├── kubernetes/
+│   ├── base/                   # 공통 매니페스트
+│   └── environments/
+│       ├── dev/               # 개발 환경 설정
+│       └── prod/              # 운영 환경 설정
+├── scripts/
+│   ├── setup_env.sh           # 로컬 전용 환경 설정
+│   ├── build.sh              # 로컬 빌드 스크립트
+│   └── create_app.sh         # 앱 생성 스크립트
+├── .env.example              # 환경변수 템플릿
+├── Dockerfile               # 환경별 이미지 빌드
+└── README.md               # 이 파일
+```
+
+자세한 인프라 정보는 [kubernetes/README.md](./kubernetes/README.md)를 참조하세요.

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fablink-dev
+  labels:
+    name: fablink-dev
+    environment: development
+    project: fablink
+    managed-by: kubernetes

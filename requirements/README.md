@@ -8,8 +8,8 @@ FabLink Backend 프로젝트의 의존성 패키지는 환경별로 분리되어
 requirements/
 ├── base.txt          # 모든 환경에서 공통으로 사용하는 패키지
 ├── local.txt         # 로컬 개발환경용 패키지
-├── development.txt   # 개발 서버환경용 패키지
-├── production.txt    # 운영환경용 패키지
+├── dev.txt           # 개발 서버환경용 패키지
+├── prod.txt          # 운영환경용 패키지
 └── README.md        # 이 파일
 ```
 
@@ -32,9 +32,9 @@ pip install -r requirements/local.txt
   - 코드 품질 도구 (flake8, black, isort)
   - 개발 편의 도구
 
-### `development.txt` - 개발 서버환경
+### `dev.txt` - 개발 서버환경
 ```bash
-pip install -r requirements/development.txt
+pip install -r requirements/dev.txt
 ```
 - **대상**: 개발팀 공용 개발 서버
 - **특징**:
