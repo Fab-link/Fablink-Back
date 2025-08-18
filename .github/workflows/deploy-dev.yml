@@ -25,6 +25,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Debug AWS credentials
+      run: |
+        echo "🔍 Checking AWS credentials setup..."
+        echo "AWS_ACCESS_KEY_ID exists: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}"
+        echo "AWS_SECRET_ACCESS_KEY exists: ${{ secrets.AWS_SECRET_ACCESS_KEY != '' }}"
+        echo "AWS_REGION: ${{ env.AWS_REGION }}"
+
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
