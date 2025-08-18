@@ -18,6 +18,7 @@ jobs:
   build-and-deploy:
     name: Build and Deploy to Dev
     runs-on: ubuntu-latest
+    environment: AWS  # AWS 환경 사용
     # develop 브랜치에 push될 때만 배포 (PR 머지 완료 후)
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     
