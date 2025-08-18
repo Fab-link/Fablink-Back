@@ -72,3 +72,4 @@ celerybeat.pid
 
 # Docker
 .dockerignore
+.amazonq
