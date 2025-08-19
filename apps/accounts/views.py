@@ -5,68 +5,23 @@ from rest_framework.response import Response
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from .tokens import DesignerToken, FactoryToken
 
 from .serializers import (
-    LoginSerializer, 
     UserSerializer,
-    TokenRefreshSerializer
+    TokenRefreshSerializer,
+    DesignerLoginSerializer,
+    FactoryLoginSerializer,
+    DesignerSerializer,
+    FactorySerializer
 )
 from .models import User
 
 
-# ==================== 통합 로그인/로그아웃 ====================
+# ==================== 로그아웃 ====================
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def login_view(request):
-    """
-    통합 로그인 API (Designer와 Factory 모두 지원)
-    POST /api/accounts/login/
-    
-    Request Body:
-    {
-        "user_id": "user123",
-        "password": "password123",
-        "user_type": "designer" | "factory"
-    }
-    """
-    serializer = LoginSerializer(data=request.data)
-    
-    if not serializer.is_valid():
-        return Response({
-            'success': False,
-            'message': '로그인 실패',
-            'errors': serializer.errors,
-        }, status=status.HTTP_400_BAD_REQUEST)
-    
-    try:
-        user = serializer.validated_data['user']
-        user_type = serializer.validated_data['user_type']
-        refresh = RefreshToken.for_user(user)
-        
-        # 사용자 정보 직렬화
-        user_data = UserSerializer(user, context={'request': request}).data
-        
-        return Response({
-            'success': True,
-            'message': f'{user_type} 로그인 성공',
-            'user_type': user_type,
-            'tokens': {
-                'access': str(refresh.access_token),
-                'refresh': str(refresh)
-            },
-            'user': user_data
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        return Response({
-            'success': False,
-            'message': f'로그인 실패: {str(e)}',
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def logout_view(request):
     """
     통합 로그아웃 API
@@ -78,28 +33,11 @@ def logout_view(request):
     }
     """
     try:
-        refresh_token = request.data.get('refresh')
-        
-        if not refresh_token:
-            return Response({
-                'success': False,
-                'message': 'Refresh 토큰이 필요합니다.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # 토큰 블랙리스트에 추가
-        token = RefreshToken(refresh_token)
-        token.blacklist()
-        
+        # 커스텀 JWT 토큰은 블랙리스트 처리 없이 단순 성공 응답
         return Response({
             'success': True,
             'message': '로그아웃 성공'
         }, status=status.HTTP_200_OK)
-        
-    except TokenError:
-        return Response({
-            'success': False,
-            'message': '유효하지 않은 토큰입니다.'
-        }, status=status.HTTP_400_BAD_REQUEST)
         
     except Exception as e:
         return Response({
@@ -143,15 +81,115 @@ def user_profile_view(request):
     GET /api/accounts/profile/
     """
     try:
-        serializer = UserSerializer(request.user, context={'request': request})
+        user = request.user
+        user_serializer = UserSerializer(user, context={'request': request})
         
-        return Response({
+        response_data = {
             'success': True,
-            'user': serializer.data
-        }, status=status.HTTP_200_OK)
+            'user': user_serializer.data,
+            'user_type': None
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
         
     except Exception as e:
         return Response({
             'success': False,
             'message': f'사용자 정보 조회 실패: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== 디자이너 로그인 ====================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def designer_login_view(request):
+    """
+    디자이너 로그인 API
+    POST /api/accounts/designer/login/
+    
+    Request Body:
+    {
+        "user_id": "designer123",
+        "password": "password123"
+    }
+    """
+    serializer = DesignerLoginSerializer(data=request.data)
+    
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'message': '로그인 실패',
+            'errors': serializer.errors,
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        designer = serializer.validated_data['designer']
+        
+        # 커스텀 JWT 토큰 생성
+        tokens = DesignerToken.for_designer(designer)
+        
+        # 디자이너 정보 직렬화
+        designer_data = DesignerSerializer(designer, context={'request': request}).data
+        
+        return Response({
+            'success': True,
+            'message': '디자이너 로그인 성공',
+            'user_type': 'designer',
+            'tokens': tokens,
+            'designer': designer_data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'로그인 실패: {str(e)}',
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== 공장 로그인 ====================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def factory_login_view(request):
+    """
+    공장 로그인 API
+    POST /api/accounts/factory/login/
+    
+    Request Body:
+    {
+        "user_id": "factory123",
+        "password": "password123"
+    }
+    """
+    serializer = FactoryLoginSerializer(data=request.data)
+    
+    if not serializer.is_valid():
+        return Response({
+            'success': False,
+            'message': '로그인 실패',
+            'errors': serializer.errors,
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        factory = serializer.validated_data['factory']
+        
+        # 커스텀 JWT 토큰 생성
+        tokens = FactoryToken.for_factory(factory)
+        
+        # 공장 정보 직렬화
+        factory_data = FactorySerializer(factory, context={'request': request}).data
+        
+        return Response({
+            'success': True,
+            'message': '공장 로그인 성공',
+            'user_type': 'factory',
+            'tokens': tokens,
+            'factory': factory_data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'로그인 실패: {str(e)}',
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

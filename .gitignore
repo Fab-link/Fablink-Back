@@ -16,6 +16,11 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Migration files (개발자 간 충돌 방지)
+*/migrations/[0-9][0-9][0-9][0-9][A-Za-z0-9_]*.py
+apps/*/migrations/[0-9][0-9][0-9][0-9][A-Za-z0-9_]*.py
+/backups/
+
 # Media files
 media/
 
@@ -26,7 +31,8 @@ static/
 # Environment variables
 .env
 .env.local
-.env.production
+.env.dev
+.env.prod
 
 # IDE
 .vscode/
@@ -66,3 +72,7 @@ celerybeat.pid
 
 # Docker
 .dockerignore
+.amazonq
+
+# Amazon Q
+.amazonq

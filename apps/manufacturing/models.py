@@ -27,11 +27,10 @@ class Product(models.Model):
     )
     
     designer = models.ForeignKey(
-        User, 
+        'accounts.Designer', 
         on_delete=models.CASCADE, 
         related_name='products',
-        verbose_name="디자이너",
-        limit_choices_to={'user_type': 'designer'}
+        verbose_name="디자이너"
     )
     name = models.CharField(max_length=100, verbose_name="제품명")
     season = models.CharField(max_length=20, choices=SEASON_CHOICES, verbose_name="시즌")
@@ -76,87 +75,110 @@ class Product(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
+        # Designer 모델은 User FK가 없으므로 직접 name 사용
         return f"{self.name} - {self.designer.name}"
 
 
 class Order(models.Model):
     """주문 모델"""
-    STATUS_CHOICES = (
-        ('pending', '대기중'),
-        ('confirmed', '확인됨'),
-        ('in_production', '생산중'),
-        ('completed', '완료'),
-        ('cancelled', '취소됨'),
-    )
-    
-    order_id = models.CharField(max_length=50, unique=True, verbose_name="주문 번호")
+    order_id = models.BigAutoField(primary_key=True, verbose_name="주문 번호")
     product = models.ForeignKey(
         Product, 
         on_delete=models.CASCADE, 
         related_name='orders',
         verbose_name="제품"
     )
-    status = models.CharField(
-        max_length=20, 
-        choices=STATUS_CHOICES, 
-        default='pending',
-        verbose_name="주문 상태"
-    )
-    quantity = models.PositiveIntegerField(
-        validators=[MinValueValidator(1)],
-        verbose_name="주문 수량"
-    )
-    unit_price = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
-        null=True, 
-        blank=True,
-        verbose_name="단가"
-    )
-    total_price = models.DecimalField(
-        max_digits=12, 
-        decimal_places=2, 
-        null=True, 
-        blank=True,
-        verbose_name="총 금액"
-    )
-    receipt_path = models.FileField(
-        upload_to='orders/receipts/', 
-        null=True, 
-        blank=True, 
-        verbose_name="영수증"
-    )
-    notes = models.TextField(null=True, blank=True, verbose_name="주문 메모")
-    
-    # 고객 정보 (Product의 designer와 다를 수 있음)
-    customer_name = models.CharField(max_length=100, null=True, blank=True, verbose_name="고객명")
-    customer_contact = models.CharField(max_length=50, null=True, blank=True, verbose_name="고객 연락처")
-    customer_email = models.EmailField(null=True, blank=True, verbose_name="고객 이메일")
-    
-    # 배송 정보
-    shipping_address = models.TextField(null=True, blank=True, verbose_name="배송 주소")
-    shipping_method = models.CharField(max_length=50, null=True, blank=True, verbose_name="배송 방법")
-    shipping_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="배송비")
-    
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성일시")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
 
     class Meta:
         db_table = 'orders'
         verbose_name = "주문"
         verbose_name_plural = "주문들"
-        ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.order_id} - {self.product.name}"
+        return f"주문 {self.order_id} - {self.product.name}"
 
-    def save(self, *args, **kwargs):
-        # 주문 번호 자동 생성
-        if not self.order_id:
-            self.order_id = f"ORD-{timezone.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
-        
-        # 총 금액 자동 계산
-        if self.unit_price and self.quantity:
-            self.total_price = self.unit_price * self.quantity
-            
-        super().save(*args, **kwargs)
+
+class RequestOrder(models.Model):
+    """주문 요청 모델"""
+    STATUS_CHOICES = (
+        ('pending', '매칭 대기중'),
+        ('matched', '매칭 완료'),
+        ('cancelled', '취소됨'),
+    )
+    
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='request_orders',
+        verbose_name="주문 번호"
+    )
+    designer_name = models.CharField(max_length=20, verbose_name="디자이너 사용자 이름")
+    product_name = models.CharField(max_length=100, verbose_name="제품명")
+    quantity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        verbose_name="수량"
+    )
+    due_date = models.DateField(verbose_name="납기일")
+    work_sheet_path = models.FileField(
+        upload_to='request_orders/worksheets/',
+        verbose_name="작업지시서"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending',
+        verbose_name="매칭 상태"
+    )
+
+    class Meta:
+        db_table = 'request_order'
+        verbose_name = "주문 요청"
+        verbose_name_plural = "주문 요청들"
+
+    def __str__(self):
+        return f"주문요청 {self.id} - {self.product_name}"
+
+
+class BidFactory(models.Model):
+    """공장 입찰 모델"""
+    SETTLEMENT_STATUS_CHOICES = (
+        ('pending', '대기중'),
+        ('confirmed', '확인됨'),
+        ('completed', '완료'),
+        ('cancelled', '취소됨'),
+    )
+    
+    factory = models.ForeignKey(
+        'accounts.Factory',
+        on_delete=models.CASCADE,
+        related_name='bids',
+        verbose_name="공장 ID"
+    )
+    request_order = models.ForeignKey(
+        RequestOrder,
+        on_delete=models.CASCADE,
+        related_name='bids',
+        verbose_name="주문 번호"
+    )
+    work_price = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        verbose_name="장당 가격"
+    )
+    expect_work_day = models.DateField(verbose_name="예상 납기일")
+    settlement_status = models.CharField(
+        max_length=20,
+        choices=SETTLEMENT_STATUS_CHOICES,
+        default='pending',
+        verbose_name="주문 상태"
+    )
+    is_matched = models.BooleanField(default=False, verbose_name="낙찰 상태")
+    matched_date = models.DateField(null=True, blank=True, verbose_name="낙찰 일자")
+
+    class Meta:
+        db_table = 'bid_factory'
+        verbose_name = "공장 입찰"
+        verbose_name_plural = "공장 입찰들"
+        unique_together = ['factory', 'request_order']  # 공장당 한 번만 입찰 가능
+
+    def __str__(self):
+        return f"입찰 {self.id} - {self.factory.name} - {self.request_order.product_name}"

@@ -116,14 +116,14 @@ load_environment_config() {
         dev)
             ENV_FILE=".env.dev"
             DJANGO_SETTINGS="fablink_project.settings.dev"
-            REQUIREMENTS_FILE="requirements/development.txt"
+            REQUIREMENTS_FILE="requirements/dev.txt"
             COLLECT_STATIC=true
             RUN_TESTS=true
             ;;
         prod)
             ENV_FILE=".env.prod"
             DJANGO_SETTINGS="fablink_project.settings.prod"
-            REQUIREMENTS_FILE="requirements/production.txt"
+            REQUIREMENTS_FILE="requirements/prod.txt"
             COLLECT_STATIC=true
             RUN_TESTS=false
             ;;

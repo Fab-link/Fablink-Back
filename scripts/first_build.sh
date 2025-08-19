@@ -121,7 +121,7 @@ load_environment_config() {
             ADMIN_USER="dev_admin"
             ADMIN_PASSWORD="dev_admin_secure_password"
             ADMIN_NAME="개발서버 관리자"
-            REQUIREMENTS_FILE="requirements/development.txt"
+            REQUIREMENTS_FILE="requirements/dev.txt"
             COLLECT_STATIC=true
             ALLOW_TEST_DATA=true
             ;;
@@ -135,7 +135,7 @@ load_environment_config() {
             ADMIN_USER="prod_admin"
             ADMIN_PASSWORD=""  # 운영환경에서는 대화형으로 입력받음
             ADMIN_NAME="운영서버 관리자"
-            REQUIREMENTS_FILE="requirements/production.txt"
+            REQUIREMENTS_FILE="requirements/prod.txt"
             COLLECT_STATIC=true
             ALLOW_TEST_DATA=false
             ;;

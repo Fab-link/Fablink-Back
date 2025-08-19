@@ -127,7 +127,7 @@ HTML 폼 생성, 유효성 검사, 데이터 처리를 쉽게 할 수 있는 `Fo
 
 ### 의존성 설치
 `requirements/` 폴더에 환경별로 필요한 라이브러리 목록이 정의되어 있습니다.
-- **개발 환경용 설치**: `pip install -r requirements/development.txt`
+- **개발 환경용 설치**: `pip install -r requirements/dev.txt`
 
 ### DB 설정
 `fablink_project/settings/development.py` 파일의 `DATABASES` 항목에서 개발용 데이터베이스 설정을 확인할 수 있습니다. 기본적으로는 간편한 `SQLite`를 사용하거나, `PostgreSQL` 등 외부 DB와 연동하여 사용합니다.

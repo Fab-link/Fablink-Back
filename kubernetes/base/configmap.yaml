@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fablink-config
+data:
+  # Django 기본 설정 (환경별 patch에서 오버라이드됨)
+  # DJANGO_SETTINGS_MODULE은 env_loader.py에서 자동 처리
+  DEBUG: "False"
+  
+  # 데이터베이스 공통 설정
+  DB_ENGINE: "django.db.backends.postgresql"
+  DB_PORT: "5432"
+  
+  # DynamoDB 공통 설정
+  DYNAMODB_REGION: "ap-northeast-2"
+  USE_DYNAMODB: "True"
+  
+  # AWS 공통 설정
+  AWS_S3_REGION_NAME: "ap-northeast-2"
+  USE_S3: "True"
+  
+  # 기타 공통 설정
+  TIME_ZONE: "Asia/Seoul"
+  LANGUAGE_CODE: "ko-kr"
+  USE_TZ: "True"

@@ -56,7 +56,7 @@ export DJANGO_ENV=production
 
 # 운영환경 패키지 설치
 log_info "운영환경 패키지를 설치합니다..."
-pip install -r requirements/production.txt
+pip install -r requirements/prod.txt
 
 # Django 보안 체크
 log_info "Django 보안 설정을 검증합니다..."

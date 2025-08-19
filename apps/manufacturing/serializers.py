@@ -1,10 +1,10 @@
 from rest_framework import serializers
-from .models import Product, Order
-from apps.accounts.serializers import UserSerializer
+from .models import Product, Order, RequestOrder, BidFactory
+from apps.accounts.serializers import UserSerializer, DesignerSerializer, FactorySerializer
 
 class ProductSerializer(serializers.ModelSerializer):
     """제품 시리얼라이저"""
-    designer_info = UserSerializer(source='designer', read_only=True)
+    designer_info = DesignerSerializer(source='designer', read_only=True)
     image_url = serializers.SerializerMethodField()
     work_sheet_url = serializers.SerializerMethodField()
     
@@ -103,6 +103,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
 
 class ProductListSerializer(serializers.ModelSerializer):
     """제품 목록용 간단한 시리얼라이저"""
+    # Designer는 User FK가 없으므로 직접 name 사용
     designer_name = serializers.CharField(source='designer.name', read_only=True)
     image_url = serializers.SerializerMethodField()
     
@@ -127,27 +128,11 @@ class ProductListSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     """주문 시리얼라이저"""
     product_info = ProductListSerializer(source='product', read_only=True)
-    receipt_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Order
-        fields = [
-            'id', 'order_id', 'product', 'product_info', 'status', 
-            'quantity', 'unit_price', 'total_price', 'receipt_path', 
-            'receipt_url', 'notes', 'customer_name', 'customer_contact', 
-            'customer_email', 'shipping_address', 'shipping_method', 
-            'shipping_cost', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'order_id', 'total_price', 'created_at', 'updated_at']
-    
-    def get_receipt_url(self, obj):
-        """영수증 URL 반환"""
-        if obj.receipt_path:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.receipt_path.url)
-            return obj.receipt_path.url
-        return None
+        fields = ['order_id', 'product', 'product_info']
+        read_only_fields = ['order_id']
 
 
 class OrderCreateSerializer(serializers.ModelSerializer):
@@ -155,20 +140,65 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Order
-        fields = [
-            'product', 'quantity', 'unit_price', 'receipt_path', 'notes',
-            'customer_name', 'customer_contact', 'customer_email',
-            'shipping_address', 'shipping_method', 'shipping_cost'
-        ]
+        fields = ['product']
+
+
+class RequestOrderSerializer(serializers.ModelSerializer):
+    """주문 요청 시리얼라이저"""
+    work_sheet_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = RequestOrder
+        fields = ['id', 'order', 'designer_name', 'product_name', 'quantity', 
+                 'due_date', 'work_sheet_path', 'work_sheet_url']
+        read_only_fields = ['id']
+    
+    def get_work_sheet_url(self, obj):
+        """작업지시서 URL 반환"""
+        if obj.work_sheet_path:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.work_sheet_path.url)
+            return obj.work_sheet_path.url
+        return None
+
+
+class RequestOrderCreateSerializer(serializers.ModelSerializer):
+    """주문 요청 생성용 시리얼라이저"""
+    
+    class Meta:
+        model = RequestOrder
+        fields = ['order', 'designer_name', 'product_name', 'quantity', 
+                 'due_date', 'work_sheet_path']
     
     def validate_quantity(self, value):
         """수량 검증"""
         if value <= 0:
             raise serializers.ValidationError("수량은 1 이상이어야 합니다.")
         return value
+
+
+class BidFactorySerializer(serializers.ModelSerializer):
+    """공장 입찰 시리얼라이저"""
+    factory_info = FactorySerializer(source='factory', read_only=True)
+    request_order_info = RequestOrderSerializer(source='request_order', read_only=True)
     
-    def validate_unit_price(self, value):
-        """단가 검증"""
-        if value is not None and value <= 0:
-            raise serializers.ValidationError("단가는 0보다 커야 합니다.")
+    class Meta:
+        model = BidFactory
+        fields = ['id', 'factory', 'factory_info', 'request_order', 'request_order_info',
+                 'work_price', 'expect_work_day', 'settlement_status', 'is_matched', 'matched_date']
+        read_only_fields = ['id', 'is_matched', 'matched_date']
+
+
+class BidFactoryCreateSerializer(serializers.ModelSerializer):
+    """공장 입찰 생성용 시리얼라이저"""
+    
+    class Meta:
+        model = BidFactory
+        fields = ['factory', 'request_order', 'work_price', 'expect_work_day']
+    
+    def validate_work_price(self, value):
+        """장당 가격 검증"""
+        if value <= 0:
+            raise serializers.ValidationError("장당 가격은 1 이상이어야 합니다.")
         return value
