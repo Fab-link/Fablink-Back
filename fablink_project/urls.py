@@ -3,23 +3,15 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
-from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from django.db import connection
+from django.core.cache import cache
+import time
 
 def api_root(request):
     """API 루트 엔드포인트"""
     return JsonResponse({
         'message': 'FabLink API Server',
         'version': '1.0.0',
-        'documentation': {
-            'swagger': '/api/docs/',
-            'redoc': '/api/redoc/',
-            'schema': '/api/schema/',
-        },
-        'health_endpoints': {
-            'health': '/health/',
-            'ready': '/ready/',
-            'startup': '/startup/',
-        },
         'endpoints': {
             'admin': '/admin/',
             'accounts': '/api/accounts/',
@@ -35,18 +27,47 @@ def api_root(request):
         }
     })
 
+def health_check(request):
+    """Health Check 엔드포인트 - Liveness Probe용"""
+    return JsonResponse({
+        'status': 'healthy',
+        'timestamp': time.time(),
+        'service': 'fablink-backend'
+    })
+
+def readiness_check(request):
+    """Readiness Check 엔드포인트 - Readiness Probe용"""
+    try:
+        # 데이터베이스 연결 확인
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        
+        db_status = 'connected'
+    except Exception as e:
+        return JsonResponse({
+            'status': 'not_ready',
+            'timestamp': time.time(),
+            'service': 'fablink-backend',
+            'checks': {
+                'database': f'error: {str(e)}'
+            }
+        }, status=503)
+    
+    return JsonResponse({
+        'status': 'ready',
+        'timestamp': time.time(),
+        'service': 'fablink-backend',
+        'checks': {
+            'database': db_status
+        }
+    })
+
 urlpatterns = [
     path('', api_root, name='api-root'),
+    path('health/', health_check, name='health-check'),
+    path('ready/', readiness_check, name='readiness-check'),
     path('admin/', admin.site.urls),
-    
-    # API 문서화 엔드포인트
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
-    
-    # Health check endpoints (루트 레벨)
-    path('', include('apps.core.urls')),
-    
     # API 엔드포인트들
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/manufacturing/', include('apps.manufacturing.urls')),

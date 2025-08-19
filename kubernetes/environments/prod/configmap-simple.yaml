@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fablink-config
+  namespace: fablink-prod
+  labels:
+    app: fablink-backend
+    environment: prod
+data:
+  # Django 환경 설정
+  DJANGO_ENV: "prod"
+  DEBUG: "False"
+  
+  # 도메인 및 CORS 설정
+  ALLOWED_HOSTS: "*"  # 임시로 모든 호스트 허용
+  CORS_ALLOWED_ORIGINS: "https://fab-link.org"
+  
+  # 데이터베이스 설정 (Aurora PostgreSQL)
+  DB_ENGINE: "django.db.backends.postgresql"
+  DB_NAME: "fablink"
+  DB_HOST: "fablink-aurora-cluster.cluster-cr2c0e2q6qeb.ap-northeast-2.rds.amazonaws.com"
+  DB_PORT: "5432"
+  
+  # S3 설정 (임시 비활성화)
+  USE_S3: "False"
+  AWS_S3_REGION_NAME: "ap-northeast-2"
+  
+  # 보안 설정 (개발용으로 완화)
+  SECURE_SSL_REDIRECT: "False"
+  SESSION_COOKIE_SECURE: "False"
+  CSRF_COOKIE_SECURE: "False"
+  
+  # 로깅 설정
+  LOG_LEVEL: "DEBUG"
+  
+  # 외부 서비스 비활성화
+  USE_SENTRY: "False"
