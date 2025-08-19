@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fablink-backend
+  namespace: fablink-prod
+  labels:
+    app: fablink-backend
+    environment: prod
+  annotations:
+    # NLB 타겟 그룹 연결을 위한 어노테이션
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "instance"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    service.beta.kubernetes.io/aws-load-balancer-target-group-arn: "arn:aws:elasticloadbalancing:ap-northeast-2:853963783084:targetgroup/fablink-prod-nlb-eks-nodeport/95cb4b0fb78cdb15"
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 8000        # 서비스 포트
+      targetPort: 8000  # 컨테이너 포트
+      nodePort: 30080   # NLB 타겟 그룹과 연결되는 NodePort
+      protocol: TCP
+  selector:
+    app: fablink-backend
+    environment: prod
+  sessionAffinity: None
+  
+---
+# 헬스체크용 별도 서비스 (필요시)
+apiVersion: v1
+kind: Service
+metadata:
+  name: fablink-backend-health
+  namespace: fablink-prod
+  labels:
+    app: fablink-backend
+    environment: prod
+    service-type: health
+spec:
+  type: ClusterIP
+  ports:
+    - name: health
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    app: fablink-backend
+    environment: prod
