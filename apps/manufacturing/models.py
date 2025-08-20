@@ -101,9 +101,11 @@ class Order(models.Model):
 class RequestOrder(models.Model):
     """주문 요청 모델"""
     STATUS_CHOICES = (
-        ('pending', '매칭 대기중'),
-        ('matched', '매칭 완료'),
-        ('cancelled', '취소됨'),
+        ('sample_pending', '샘플 견적 대기중'),
+        ('sample_matched', '샘플 매칭 완료'),
+        ('product_pending', '본 생산 대기중'),
+        ('product_matched', '본 생산 매칭 완료'),
+        ('finished', '완료'),
     )
     
     order = models.ForeignKey(
@@ -126,7 +128,7 @@ class RequestOrder(models.Model):
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
-        default='pending',
+        default='sample_pending',
         verbose_name="매칭 상태"
     )
 

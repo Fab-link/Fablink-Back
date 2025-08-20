@@ -187,8 +187,11 @@ def get_factory_orders(request):
         if not hasattr(request.user, 'factory'):
             return Response({'detail': '공장주만 접근할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
         
-        # 모든 RequestOrder 조회 (pending 상태)
-        request_orders = RequestOrder.objects.filter(status='pending').select_related(
+        # 모든 RequestOrder 조회 (견적 대기 상태들만)
+        # STATUS_CHOICES 변경에 따라 'pending' 대신 샘플/본생산 대기 상태만 노출
+        request_orders = RequestOrder.objects.filter(
+            status__in=['sample_pending', 'product_pending']
+        ).select_related(
             'order__product__designer'
         ).prefetch_related('bids__factory')
         
@@ -199,11 +202,24 @@ def get_factory_orders(request):
             
             # 디자이너 정보 가져오기
             designer = req_order.order.product.designer
+
+            # 요청 상태 라벨 매핑 (샘플/본생산 구분)
+            status_map = {
+                'sample_pending': '샘플 견적',
+                'sample_matched': '샘플 견적',
+                'product_pending': '생산 견적',
+                'product_matched': '생산 견적',
+                'finished': '완료'
+            }
+            request_status = req_order.status
+            request_status_label = status_map.get(request_status, '')
             
             order_data = {
                 'id': req_order.id,
                 'orderId': req_order.order.order_id,
                 'status': 'pending' if not factory_bid else 'responded',
+                'requestStatus': request_status,
+                'requestStatusLabel': request_status_label,
                 'createdAt': req_order.order.product.created_at,
                 'quantity': req_order.quantity,
                 'customerName': req_order.designer_name,
