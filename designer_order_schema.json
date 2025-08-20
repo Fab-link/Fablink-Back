@@ -12,7 +12,7 @@
       "status": "string",
       "factory_list": [
         {
-          "facory_id": "string",
+          "factory_id": "string",
           "profile_image": "string",
           "name": "string",
           "contact": "string",

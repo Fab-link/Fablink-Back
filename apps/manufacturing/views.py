@@ -5,11 +5,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
 from django.db import transaction
 from django.utils import timezone
+from django.conf import settings
+from django.db.utils import IntegrityError
 from .models import Product, Order, RequestOrder, BidFactory
 from .serializers import (
     ProductSerializer, ProductCreateSerializer, OrderSerializer, OrderCreateSerializer,
     RequestOrderSerializer, BidFactorySerializer, BidFactoryCreateSerializer
 )
+from apps.core.services.mongo import get_collection, now_iso_with_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -397,7 +400,76 @@ def create_factory_bid(request):
         
         serializer = BidFactoryCreateSerializer(data=data)
         if serializer.is_valid():
-            serializer.save()
+            try:
+                bid = serializer.save()
+            except IntegrityError:
+                # 동일 공장-주문 조합 중복 입찰
+                return Response({'detail': '이미 이 주문에 대해 입찰을 제출하셨습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Bid 생성 성공 시, 디자이너 Mongo 문서의 step.index=1 factory_list에 항목 push
+            try:
+                # 기본 식별값 (designer_orders는 문자열 order_id를 사용하므로 str로 변환)
+                order_id_str = str(request_order.order.order_id)
+                factory = request.user.factory
+
+                # 프로필 이미지 절대 URL 구성(없으면 빈 문자열)
+                profile_image_url = ''
+                try:
+                    if getattr(factory, 'profile_image', None):
+                        if factory.profile_image:
+                            profile_image_url = request.build_absolute_uri(factory.profile_image.url)
+                except Exception:
+                    profile_image_url = ''
+
+                # factory_list 항목 구성 (expect_work_day는 YYYY-MM-DD 문자열)
+                item = {
+                    'factory_id': str(factory.id),
+                    'profile_image': profile_image_url,
+                    'name': getattr(factory, 'name', ''),
+                    'contact': getattr(factory, 'contact', ''),
+                    'address': getattr(factory, 'address', ''),
+                    'work_price': bid.work_price,
+                    'currency': 'KRW',
+                    'expect_work_day': bid.expect_work_day.strftime('%Y-%m-%d') if getattr(bid, 'expect_work_day', None) else ''
+                }
+
+                col = get_collection(settings.MONGODB_COLLECTIONS['designer_orders'])
+
+                # 1) 동일 factory_id 항목 제거(중복 방지)
+                res_pull = col.update_one(
+                    { 'order_id': order_id_str },
+                    {
+                        '$pull': { 'steps.$[step].factory_list': { 'factory_id': str(factory.id) } },
+                        '$set': { 'last_updated': now_iso_with_minutes() }
+                    },
+                    array_filters=[ { 'step.index': 1 } ],
+                    upsert=False
+                )
+                if getattr(res_pull, 'matched_count', 0) == 0:
+                    logger.warning(
+                        'designer_orders not matched on $pull. order_id=%s (check order doc creation and type).',
+                        order_id_str
+                    )
+
+                # 2) 새 항목 push
+                res_push = col.update_one(
+                    { 'order_id': order_id_str },
+                    {
+                        '$push': { 'steps.$[step].factory_list': item },
+                        '$set': { 'last_updated': now_iso_with_minutes() }
+                    },
+                    array_filters=[ { 'step.index': 1 } ],
+                    upsert=False
+                )
+                if getattr(res_push, 'matched_count', 0) == 0:
+                    logger.warning(
+                        'designer_orders not matched on $push. order_id=%s (check order doc creation and type).',
+                        order_id_str
+                    )
+            except Exception:
+                # Mongo 반영 실패는 bid 생성 자체를 실패로 만들지 않음(로그만 남김)
+                logger.exception('Failed to push factory item into designer_orders.factory_list')
+
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
