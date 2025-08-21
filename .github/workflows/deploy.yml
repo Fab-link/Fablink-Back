@@ -208,29 +208,3 @@ jobs:
           ${{ job.status == 'success' && format('🔗 API: {0}', env.API_GATEWAY_URL) || '🔍 로그를 확인해주세요.' }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-    - name: Extract Jira ticket from commit
-      id: jira-ticket
-      run: |
-        echo "🔍 Extracting Jira ticket..."
-        echo "Commit message: '${{ github.event.head_commit.message }}'"
-        
-        # 방법 1: 커밋 메시지에서 FABLINK-XXX 패턴 추출
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        JIRA_TICKET=$(echo "$COMMIT_MSG" | grep -oE 'FABLINK-[0-9]+' | head -1)
-        echo "Method 1 (commit message): '$JIRA_TICKET'"
-        
-        # 방법 2: 머지 커밋에서 추출 시도
-        if [ -z "$JIRA_TICKET" ]; then
-          # "Merge pull request #XX from user/FABLINK-152" 형태
-          JIRA_TICKET=$(echo "$COMMIT_MSG" | sed -n 's/.*from [^/]*\/\(FABLINK-[0-9]\+\).*/\1/p')
-          echo "Method 2 (merge commit): '$JIRA_TICKET'"
-        fi
-        
-        # 찾지 못하면 기본값 사용
-        if [ -z "$JIRA_TICKET" ]; then
-          JIRA_TICKET="FABLINK-Unknown"
-          echo "Fallback: '$JIRA_TICKET'"
-        fi
-        
-        echo "JIRA_TICKET=$JIRA_TICKET" >> $GITHUB_OUTPUT
-        echo "🎫 Final Jira ticket: $JIRA_TICKET"
