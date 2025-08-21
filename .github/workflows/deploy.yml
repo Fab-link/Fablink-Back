@@ -202,13 +202,14 @@ jobs:
         status: ${{ job.status }}
         channel: '#개발-알림'  # 슬랙 채널명 (실제 채널명으로 변경)
         text: |
-          🚀 *Backend 배포 알림*
+          🚀 Backend 배포 알림
           
-          📋 **지라 티켓**: <https://fablink.atlassian.net/jira/software/projects/FABLINK/boards/1/timeline?selectedIssue=${{ steps.jira-ticket.outputs.JIRA_TICKET }}|${{ steps.jira-ticket.outputs.JIRA_TICKET }}>
-          🌿 **브랜치**: ${{ github.ref_name }}
-          🎯 **환경**: ${{ env.ENVIRONMENT }}
-          👤 **작업자**: ${{ github.actor }}
-          📅 **시간**: ${{ github.event.head_commit.timestamp }}
+          📋 지라 티켓: <https://fablink.atlassian.net/jira/software/projects/FABLINK/boards/1/timeline?selectedIssue=${{ steps.jira-ticket.outputs.JIRA_TICKET }}|${{ steps.jira-ticket.outputs.JIRA_TICKET }}>
+          💬 작업(커밋) 내용: ${{ github.event.head_commit.message }}
+          🌿 브랜치: ${{ github.ref_name }}
+          🎯 환경: ${{ env.ENVIRONMENT }}
+          👤 작업자: ${{ github.actor }}
+          📅 시간: ${{ github.event.head_commit.timestamp }}
           
           ${{ job.status == 'success' && '✅ 배포 성공!' || '❌ 배포 실패!' }}
           
