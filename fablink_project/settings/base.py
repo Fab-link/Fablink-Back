@@ -296,3 +296,13 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = 'accounts.User'
+
+# API Gateway 프록시 설정
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# 신뢰할 수 있는 프록시 (API Gateway, NLB)
+ALLOWED_HOSTS = [
+    '*',  # 개발환경에서는 모든 호스트 허용
+]

@@ -65,7 +65,9 @@ def readiness_check(request):
 
 urlpatterns = [
     path('', api_root, name='api-root'),
-    path('health/', health_check, name='health-check'),
+    # Health check endpoints - 두 가지 패턴 모두 지원
+    path('health/', health_check, name='health-check-with-slash'),
+    path('health', health_check, name='health-check-without-slash'),  # NLB 헬스체크용
     path('ready/', readiness_check, name='readiness-check'),
     path('admin/', admin.site.urls),
     # API 엔드포인트들
