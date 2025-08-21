@@ -1,30 +1,45 @@
-name: Deploy to Dev Environment
+name: Deploy Backend
 
-# develop 브랜치에 push되거나 PR이 생성될 때 실행
+# develop/master 브랜치에 push되거나 PR이 생성될 때 실행
 on:
   push:
-    branches: [ develop ]  # develop 브랜치에 머지될 때 자동 배포
+    branches: [ develop, master ]  # develop(dev환경), master(prod환경) 브랜치 지원
   pull_request:
-    branches: [ develop ]  # develop 브랜치로의 PR 생성 시 테스트만 실행
+    branches: [ develop, master ]  # PR 생성 시 테스트만 실행
 
 env:
   AWS_REGION: ap-northeast-2
-  ECR_REPOSITORY: fablink-backend-dev
-  EKS_CLUSTER_NAME: fablink-cluster-dev
-  KUBERNETES_NAMESPACE: fablink-dev
 
 jobs:
-  # 빌드 및 배포 (develop 브랜치 push 시에만 실행)
+  # 빌드 및 배포 (develop/master 브랜치 push 시에만 실행)
   build-and-deploy:
-    name: Build and Deploy to Dev
+    name: Build and Deploy
     runs-on: ubuntu-latest
     environment: AWS  # AWS 환경 사용
-    # develop 브랜치에 push될 때만 배포 (PR 머지 완료 후)
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    # develop 또는 master 브랜치에 push될 때만 배포 (PR 머지 완료 후)
+    if: (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/master') && github.event_name == 'push'
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Set environment variables
+      run: |
+        if [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
+          echo "🎯 Deploying to PRODUCTION environment"
+          echo "ECR_REPOSITORY=fablink-backend" >> $GITHUB_ENV
+          echo "EKS_CLUSTER_NAME=fablink-cluster-prod" >> $GITHUB_ENV
+          echo "KUBERNETES_NAMESPACE=fablink-prod" >> $GITHUB_ENV
+          echo "ENVIRONMENT=prod" >> $GITHUB_ENV
+          echo "API_GATEWAY_URL=https://bjqxlrmmi6.execute-api.ap-northeast-2.amazonaws.com/prod" >> $GITHUB_ENV
+        else
+          echo "🎯 Deploying to DEVELOPMENT environment"
+          echo "ECR_REPOSITORY=fablink-backend-dev" >> $GITHUB_ENV
+          echo "EKS_CLUSTER_NAME=fablink-cluster-dev" >> $GITHUB_ENV
+          echo "KUBERNETES_NAMESPACE=fablink-dev" >> $GITHUB_ENV
+          echo "ENVIRONMENT=dev" >> $GITHUB_ENV
+          echo "API_GATEWAY_URL=https://8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com" >> $GITHUB_ENV
+        fi
 
     - name: Debug AWS credentials
       run: |
@@ -32,6 +47,10 @@ jobs:
         echo "AWS_ACCESS_KEY_ID exists: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}"
         echo "AWS_SECRET_ACCESS_KEY exists: ${{ secrets.AWS_SECRET_ACCESS_KEY != '' }}"
         echo "AWS_REGION: ${{ env.AWS_REGION }}"
+        echo "Environment: ${{ env.ENVIRONMENT }}"
+        echo "ECR Repository: ${{ env.ECR_REPOSITORY }}"
+        echo "EKS Cluster: ${{ env.EKS_CLUSTER_NAME }}"
+        echo "Namespace: ${{ env.KUBERNETES_NAMESPACE }}"
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -52,13 +71,13 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        echo "🔨 Building Docker image for Dev environment..."
+        echo "🔨 Building Docker image for ${{ env.ENVIRONMENT }} environment..."
         echo "📦 Image will be tagged as: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
         
         # Build and push image
         docker buildx build \
           --platform linux/amd64 \
-          --build-arg ENV=dev \
+          --build-arg ENV=${{ env.ENVIRONMENT }} \
           --tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
           --tag $ECR_REGISTRY/$ECR_REPOSITORY:latest \
           --push .
@@ -80,7 +99,7 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        echo "🚀 Deploying to Dev environment..."
+        echo "🚀 Deploying to ${{ env.ENVIRONMENT }} environment..."
         echo "🎯 Target: $KUBERNETES_NAMESPACE namespace"
         
         # Update deployment image
@@ -121,23 +140,24 @@ jobs:
         if [ ${{ job.status }} == 'success' ]; then
           echo ""
           echo "🎉 =================================="
-          echo "✅ Dev Environment Deployment SUCCESS!"
+          echo "✅ ${{ env.ENVIRONMENT }} Environment Deployment SUCCESS!"
           echo "=================================="
-          echo "🔗 API Gateway: https://8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com/"
-          echo "📚 Swagger UI: https://8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com/api/docs/"
-          echo "📖 ReDoc: https://8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com/api/redoc/"
-          echo "🏥 Health Check: https://8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com/health/"
-          echo "📊 Ready Check: https://8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com/ready/"
+          echo "🔗 API Gateway: ${{ env.API_GATEWAY_URL }}"
+          echo "📚 Swagger UI: ${{ env.API_GATEWAY_URL }}/api/docs/"
+          echo "📖 ReDoc: ${{ env.API_GATEWAY_URL }}/api/redoc/"
+          echo "🏥 Health Check: ${{ env.API_GATEWAY_URL }}/health/"
+          echo "📊 Ready Check: ${{ env.API_GATEWAY_URL }}/ready/"
           echo ""
           echo "🐳 Docker Image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
           echo "🏷️  Git Commit: ${{ github.sha }}"
           echo "🌿 Branch: ${{ github.ref_name }}"
           echo "👤 Author: ${{ github.actor }}"
+          echo "🎯 Environment: ${{ env.ENVIRONMENT }}"
           echo "=================================="
         else
           echo ""
           echo "❌ =================================="
-          echo "💥 Dev Environment Deployment FAILED!"
+          echo "💥 ${{ env.ENVIRONMENT }} Environment Deployment FAILED!"
           echo "=================================="
           echo "🔍 Please check the logs above for details."
           echo "🐛 Debug steps:"
