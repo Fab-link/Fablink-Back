@@ -291,15 +291,18 @@ def get_designer_orders(request):
         # 평가를 위해 리스트로 고정 (배치 Mongo 조회를 위해 order_id 수집)
         orders = list(orders_qs)
 
-        # Mongo(designer_orders)에서 current_step_index 배치 조회
+        # Mongo(designer_orders)에서 current_step_index 및 steps 등 배치 조회
         current_idx_map = {}
+        steps_map = {}
+        overall_status_map = {}
+        last_updated_map = {}
         try:
             order_ids = [str(o.order_id) for o in orders if getattr(o, 'order_id', None) is not None]
             if order_ids:
                 col_designer = get_collection(settings.MONGODB_COLLECTIONS['designer_orders'])
                 cur = col_designer.find(
                     { 'order_id': { '$in': order_ids } },
-                    projection={ '_id': 0, 'order_id': 1, 'current_step_index': 1 }
+                    projection={ '_id': 0, 'order_id': 1, 'current_step_index': 1, 'steps': 1, 'overall_status': 1, 'last_updated': 1 }
                 )
                 for doc in cur:
                     oid = str(doc.get('order_id'))
@@ -307,6 +310,12 @@ def get_designer_orders(request):
                         current_idx_map[oid] = int(doc.get('current_step_index') or 1)
                     except Exception:
                         current_idx_map[oid] = 1
+                    if 'steps' in doc:
+                        steps_map[oid] = doc.get('steps')
+                    if 'overall_status' in doc:
+                        overall_status_map[oid] = doc.get('overall_status')
+                    if 'last_updated' in doc:
+                        last_updated_map[oid] = doc.get('last_updated')
         except Exception:
             # Mongo 조회 실패 시 전체 흐름을 막지 않음 (기본 1)
             logger.exception('get_designer_orders: failed to fetch current_step_index from designer_orders')
@@ -335,6 +344,10 @@ def get_designer_orders(request):
                 },
                 # 진행 단계: Mongo designer_orders.current_step_index 우선 사용(기본 1)
                 'current_step_index': current_idx_map.get(str(order.order_id), 1),
+                # 세부 단계 데이터: Mongo steps 그대로 포함
+                'steps': steps_map.get(str(order.order_id)),
+                'overall_status': overall_status_map.get(str(order.order_id), ''),
+                'last_updated': last_updated_map.get(str(order.order_id)),
             }
             
             orders_data.append(order_data)
