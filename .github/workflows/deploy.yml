@@ -23,6 +23,33 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Extract Jira ticket from commit
+      id: jira-ticket
+      run: |
+        echo "🔍 Extracting Jira ticket..."
+        echo "Commit message: '${{ github.event.head_commit.message }}'"
+        
+        # 커밋 메시지에서 FABLINK-XXX 패턴 추출
+        COMMIT_MSG="${{ github.event.head_commit.message }}"
+        JIRA_TICKET=$(echo "$COMMIT_MSG" | grep -oE 'FABLINK-[0-9]+' | head -1)
+        echo "Method 1 result: '$JIRA_TICKET'"
+        
+        # 만약 커밋 메시지에 없으면 머지 커밋에서 추출 시도
+        if [ -z "$JIRA_TICKET" ]; then
+          # 머지 커밋 메시지 형태: "Merge pull request #XX from user/FABLINK-152"
+          JIRA_TICKET=$(echo "$COMMIT_MSG" | sed -n 's/.*from [^/]*\/\(FABLINK-[0-9]\+\).*/\1/p')
+          echo "Method 2 result: '$JIRA_TICKET'"
+        fi
+        
+        # 여전히 없으면 기본값 사용
+        if [ -z "$JIRA_TICKET" ]; then
+          JIRA_TICKET="FABLINK-Unknown"
+          echo "Fallback: '$JIRA_TICKET'"
+        fi
+        
+        echo "JIRA_TICKET=$JIRA_TICKET" >> $GITHUB_OUTPUT
+        echo "🎫 Final Jira ticket: $JIRA_TICKET"
+
     - name: Set environment variables
       run: |
         if [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
@@ -167,41 +194,21 @@ jobs:
           echo "=================================="
           exit 1
         fi
-    - name: Extract Jira ticket from commit
-      id: jira-ticket
-      run: |
-        # 커밋 메시지에서 FABLINK-XXX 패턴 추출
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        JIRA_TICKET=$(echo "$COMMIT_MSG" | grep -oE 'FABLINK-[0-9]+' | head -1)
-        
-        # 만약 커밋 메시지에 없으면 머지 커밋에서 추출 시도
-        if [ -z "$JIRA_TICKET" ]; then
-          # 머지 커밋 메시지 형태: "Merge pull request #XX from user/FABLINK-152"
-          JIRA_TICKET=$(echo "$COMMIT_MSG" | grep -oE 'from [^/]+/(FABLINK-[0-9]+)' | sed 's/from [^/]+\///')
-        fi
-        
-        # 여전히 없으면 기본값 사용
-        if [ -z "$JIRA_TICKET" ]; then
-          JIRA_TICKET="FABLINK-Unknown"
-        fi
-        
-        echo "JIRA_TICKET=$JIRA_TICKET" >> $GITHUB_OUTPUT
-        echo "🎫 Extracted Jira ticket: $JIRA_TICKET"
 
     - name: Send Slack notification
       if: always()  # 성공/실패 관계없이 실행
       uses: 8398a7/action-slack@v3
       with:
         status: ${{ job.status }}
-        channel: '#back'  # 슬랙 채널명 (실제 채널명으로 변경)
+        channel: '#개발-알림'  # 슬랙 채널명 (실제 채널명으로 변경)
         text: |
-          🚀 Backend 배포 알림
+          🚀 *Backend 배포 알림*
           
-          📋 지라 티켓: <https://fablink.atlassian.net/jira/software/projects/FABLINK/boards/1/timeline?selectedIssue=${{ steps.jira-ticket.outputs.JIRA_TICKET }}|${{ steps.jira-ticket.outputs.JIRA_TICKET }}>
-          🌿 브랜치: ${{ github.ref_name }}
-          🎯 환경: ${{ env.ENVIRONMENT }}
-          👤 작업자: ${{ github.actor }}
-          📅 시간: ${{ github.event.head_commit.timestamp }}
+          📋 **지라 티켓**: <https://fablink.atlassian.net/jira/software/projects/FABLINK/boards/1/timeline?selectedIssue=${{ steps.jira-ticket.outputs.JIRA_TICKET }}|${{ steps.jira-ticket.outputs.JIRA_TICKET }}>
+          🌿 **브랜치**: ${{ github.ref_name }}
+          🎯 **환경**: ${{ env.ENVIRONMENT }}
+          👤 **작업자**: ${{ github.actor }}
+          📅 **시간**: ${{ github.event.head_commit.timestamp }}
           
           ${{ job.status == 'success' && '✅ 배포 성공!' || '❌ 배포 실패!' }}
           
