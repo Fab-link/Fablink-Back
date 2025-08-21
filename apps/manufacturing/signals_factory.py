@@ -6,7 +6,7 @@ from django.conf import settings
 
 from apps.manufacturing.models import BidFactory
 from apps.core.services.mongo import get_collection, ensure_indexes, now_iso_with_minutes
-from apps.core.services.factory_steps_template import build_factory_steps_template
+from apps.core.services.orders_steps_template import build_orders_steps_template
 
 
 def _extract_phase_from_bid(bid: BidFactory) -> str:
@@ -20,8 +20,8 @@ def _extract_phase_from_bid(bid: BidFactory) -> str:
 @receiver(post_save, sender=BidFactory)
 def upsert_factory_order_on_award(sender, instance: BidFactory, created: bool, **kwargs):
     """
-    On bid award (is_matched=True), upsert a factory_orders document keyed by
-    (order_id, phase, factory_id). Uses Option B: create when factory assignment happens.
+    On bid award (is_matched=True), update unified 'orders' document for the order.
+    Uses Option B: create/update when factory assignment happens.
     """
     # Only act when the bid is marked as matched
     if not instance.is_matched:
@@ -47,10 +47,6 @@ def upsert_factory_order_on_award(sender, instance: BidFactory, created: bool, *
 
     base_doc = {
         'order_id': order_id,
-        'phase': phase,
-        'factory_id': factory_id,
-        'designer_id': designer_id,
-        'product_id': product_id,
     }
 
     # Business fields from bid/request
@@ -64,34 +60,31 @@ def upsert_factory_order_on_award(sender, instance: BidFactory, created: bool, *
 
     business_fields = {
         'quantity': getattr(req, 'quantity', None),
-        'unit_price': getattr(instance, 'work_price', None),
-        'currency': 'KRW',
+        'work_price': getattr(instance, 'work_price', None),
         'due_date': expect_date,
-        'delivery_status': '',
-        'delivery_code': '',
     }
 
-    col = get_collection(settings.MONGODB_COLLECTIONS['factory_orders'])
+    col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
 
     update_doc = {
         '$setOnInsert': {
             **base_doc,
             'current_step_index': 1,
             'overall_status': '',
-            'steps': build_factory_steps_template(phase),
+            # unified schema steps
+            'steps': build_orders_steps_template(),
         },
         '$set': {
-            # business fields only here to avoid conflicts on insert
+            'designer_id': designer_id,
+            'product_id': product_id,
+            'factory_id': factory_id,
+            'phase': phase,
             **business_fields,
             'last_updated': now_iso_with_minutes(),
         },
     }
 
     try:
-        col.update_one(
-            {'order_id': base_doc['order_id'], 'phase': base_doc['phase'], 'factory_id': base_doc['factory_id']},
-            update_doc,
-            upsert=True,
-        )
+        col.update_one({'order_id': base_doc['order_id']}, update_doc, upsert=True)
     except Exception as e:
-        print(f"[Mongo] Upsert factory_orders failed for order_id={order_id}, phase={phase}, factory_id={factory_id}: {e}")
+        print(f"[Mongo] Upsert orders failed for order_id={order_id}: {e}")

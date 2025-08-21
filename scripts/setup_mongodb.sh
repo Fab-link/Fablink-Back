@@ -45,6 +45,7 @@ MONGODB_URI="${MONGODB_URI:-mongodb://localhost:9000}"
 DB_NAME="${MONGODB_DB:-fablink}"
 DESIGNER_COLL="${MONGODB_COLLECTION_DESIGNER:-designer_orders}"
 FACTORY_COLL="${MONGODB_COLLECTION_FACTORY:-factory_orders}"
+ORDERS_COLL="${MONGODB_COLLECTION_ORDERS:-orders}"
 
 # mongodb://[auth@]host:port[/...]
 _URI_NO_SCHEME="${MONGODB_URI#mongodb://}"
