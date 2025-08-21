@@ -54,11 +54,19 @@ def upsert_factory_order_on_award(sender, instance: BidFactory, created: bool, *
     }
 
     # Business fields from bid/request
+    # Convert date to ISO string for Mongo compatibility
+    expect_date = getattr(instance, 'expect_work_day', None)
+    if hasattr(expect_date, 'isoformat'):
+        try:
+            expect_date = expect_date.isoformat()
+        except Exception:
+            expect_date = None
+
     business_fields = {
         'quantity': getattr(req, 'quantity', None),
         'unit_price': getattr(instance, 'work_price', None),
         'currency': 'KRW',
-        'due_date': getattr(instance, 'expect_work_day', None),
+        'due_date': expect_date,
         'delivery_status': '',
         'delivery_code': '',
     }
@@ -71,10 +79,9 @@ def upsert_factory_order_on_award(sender, instance: BidFactory, created: bool, *
             'current_step_index': 1,
             'overall_status': '',
             'steps': build_factory_steps_template(phase),
-            **business_fields,
         },
         '$set': {
-            **base_doc,
+            # business fields only here to avoid conflicts on insert
             **business_fields,
             'last_updated': now_iso_with_minutes(),
         },
