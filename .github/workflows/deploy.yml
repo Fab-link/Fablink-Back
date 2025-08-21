@@ -182,7 +182,7 @@ jobs:
         
         # 여전히 없으면 기본값 사용
         if [ -z "$JIRA_TICKET" ]; then
-          JIRA_TICKET="${{ github.ref_name }}"
+          JIRA_TICKET="FABLINK-Unknown"
         fi
         
         echo "JIRA_TICKET=$JIRA_TICKET" >> $GITHUB_OUTPUT
