@@ -96,6 +96,113 @@ def repair_steps_stage_integrity(doc: dict) -> bool:
             changed_any = True
     return changed_any
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def initialize_order(request):
+    """단계 8 '제조 요청 완료' 시 호출.
+    manufacturingData(payload) 기반으로:
+      1) Product 존재 여부 확인 (productId)
+      2) Order 생성 (자동 BigAutoField order_id)
+      3) unified Mongo 'orders' 컬렉션 문서 생성 (order_id unique). 이미 존재하면 409 반환.
+    manufacturingData 예시 필드:
+        productId, name, season, target_customer, concept, detail, size, quantity, due_date (YYYY-MM-DD), memo, submittedAt
+    날짜 처리:
+        - order_date: submittedAt (ISO) -> minutes precision ISO (UTC 기준)
+        - due_date: YYYY-MM-DD -> 그대로 저장 (문서 루트 + step2.order_date? 는 order_date 로 저장)
+    응답: { order_id, detail }
+    권한: 디자이너만.
+    """
+    try:
+        if not hasattr(request.user, 'designer'):
+            return Response({'detail': '디자이너만 생성할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        data = request.data or {}
+        product_id = data.get('productId') or data.get('product_id')
+        if not product_id:
+            return Response({'detail': 'productId 필수'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            product = Product.objects.get(id=product_id, designer=request.user.designer)
+        except Product.DoesNotExist:
+            return Response({'detail': '제품을 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # SQL Order 생성 (중복 방지: 동일 product 로 여러 order 허용. business rule 조정 가능)
+        with transaction.atomic():
+            order = Order.objects.create(product=product)
+        order_id_str = str(order.order_id)
+
+        # Mongo 문서 생성 (unique order_id). 이미 있으면 중복 처리.
+        try:
+            ensure_indexes()
+        except Exception:
+            pass
+        col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+        existing = col.find_one({'order_id': order_id_str})
+        if existing:
+            return Response({'detail': '이미 초기화된 주문입니다.', 'order_id': order.order_id}, status=status.HTTP_409_CONFLICT)
+
+        # manufacturingData 기반 필드 매핑
+        submitted_at = data.get('submittedAt') or data.get('submitted_at')
+        # order_date: submitted_at -> minutes precision (fallback: now)
+        from datetime import datetime
+        order_date_iso = now_iso_with_minutes()
+        if submitted_at:
+            try:
+                # parse ISO
+                dt = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
+                # minutes precision
+                order_date_iso = dt.astimezone().strftime('%Y-%m-%dT%H:%M')
+            except Exception:
+                pass
+        due_date_raw = data.get('due_date') or data.get('dueDate')
+        # Basic YYYY-MM-DD validation
+        if due_date_raw:
+            try:
+                datetime.strptime(due_date_raw, '%Y-%m-%d')
+            except Exception:
+                return Response({'detail': 'due_date 형식은 YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+
+        steps = build_orders_steps_template()
+        # step1: factory 선정 리스트 초기 상태 유지
+        # step2: 생산 현황 기본 필드 설정
+        if len(steps) >= 2:
+            steps[1]['order_date'] = order_date_iso
+        # step3 & 7 배송 조회 단계 product 정보 매핑
+        product_name = data.get('name') or data.get('productName') or product.name
+        quantity = data.get('quantity') or data.get('step5', {}).get('totalQuantity') or product.quantity or 0
+        try:
+            quantity = int(quantity)
+        except Exception:
+            quantity = 0
+        for idx in (2, 6):
+            # steps indices 3,7 in template (0-based 2,6) hold product_name/product_quantity keys
+            if len(steps) > idx:
+                steps[idx]['product_name'] = product_name
+                steps[idx]['product_quantity'] = quantity
+
+        doc = {
+            'order_id': order_id_str,
+            'designer_id': str(request.user.designer.id),
+            'product_id': str(product.id),
+            'product_name': product_name,
+            'quantity': quantity,
+            'order_date': order_date_iso,
+            'due_date': due_date_raw or '',
+            'current_step_index': 1,
+            'overall_status': '',
+            'phase': 'sample',
+            'steps': steps,
+            'last_updated': now_iso_with_minutes(),
+        }
+        try:
+            col.insert_one(doc)
+        except Exception as e:
+            return Response({'detail': f'Mongo 생성 실패: {e}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        doc.pop('_id', None)
+        return Response({'detail': '주문이 초기화되었습니다.', 'order_id': order.order_id}, status=status.HTTP_201_CREATED)
+    except Exception:
+        logger.exception('initialize_order error')
+        return Response({'detail': '서버 오류'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     permission_classes = [IsAuthenticated]
@@ -244,6 +351,38 @@ def submit_manufacturing(request):
                 quantity=product.quantity or 0,
                 due_date=product.due_date or None,
             )
+
+        # Fallback: ensure Mongo unified orders document exists (signals may have failed if import disabled)
+        try:
+            from apps.core.services.mongo import get_collection, now_iso_with_minutes, ensure_indexes
+            from apps.core.services.orders_steps_template import build_orders_steps_template
+            try:
+                ensure_indexes()
+            except Exception:
+                pass
+            col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+            order_id_str = str(order.order_id)
+            if not col.find_one({'order_id': order_id_str}):
+                col.update_one(
+                    {'order_id': order_id_str},
+                    {
+                        '$setOnInsert': {
+                            'order_id': order_id_str,
+                            'current_step_index': 1,
+                            'overall_status': '',
+                            'phase': 'sample',
+                            'steps': build_orders_steps_template(),
+                        },
+                        '$set': {
+                            'designer_id': str(product.designer.id),
+                            'product_id': str(product.id),
+                            'last_updated': now_iso_with_minutes(),
+                        },
+                    },
+                    upsert=True,
+                )
+        except Exception:
+            logger.exception('submit_manufacturing fallback Mongo upsert failed')
 
         return Response({
             'product_id': product.id,
@@ -441,6 +580,34 @@ def get_bids_by_order(request):
     except Exception as e:
         logger.exception('get_bids_by_order error')
         return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def has_factory_bid(request):
+    """현재 로그인한 factory 사용자가 특정 order 에 대해 이미 입찰(bid_factory 레코드)을 제출했는지 여부.
+    입력 쿼리 파라미터: order_id
+    응답: { has_bid: bool, bid_id: int|None }
+    권한: factory 사용자만.
+    """
+    try:
+        if not hasattr(request.user, 'factory'):
+            return Response({'detail': '공장 사용자만 조회할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        order_id = request.GET.get('order_id')
+        if not order_id:
+            return Response({'detail': 'order_id 파라미터 필요'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # order_id 는 BidFactory->request_order->order.order_id 경로로 매칭
+            bid = BidFactory.objects.select_related('request_order__order').filter(
+                request_order__order__order_id=order_id,
+                factory=request.user.factory,
+            ).first()
+        except Exception:
+            bid = None
+        return Response({'has_bid': bool(bid), 'bid_id': bid.id if bid else None}, status=status.HTTP_200_OK)
+    except Exception:
+        logger.exception('has_factory_bid error')
+        return Response({'detail': '서버 오류'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -722,6 +889,17 @@ def select_bid(request, bid_id):
             col_orders.update_one({'order_id': order_id_str}, {'$set': set_updates}, upsert=False)
         except Exception:  # noqa: E722
             logger.exception('orders unified update after bid select failed')
+
+        # 정상 처리 응답 반환 (선정된 입찰 정보와 상태)
+        return Response({
+            'detail': '입찰이 선정되었습니다.',
+            'bid_id': bid.id,
+            'request_order_id': bid.request_order.id,
+            'order_id': bid.request_order.order.order_id,
+            'factory_id': getattr(bid.factory, 'id', None),
+            'status': 'sample_matched',
+            'matched_date': bid.matched_date,
+        }, status=status.HTTP_200_OK)
     except Exception:
         logger.exception('select_bid error (post-processing)')
         return Response({'detail': '서버 오류'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

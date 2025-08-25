@@ -33,6 +33,19 @@ def ensure_indexes():
         col_orders.create_index([('designer_id', ASCENDING)], name='ix_designer_id')
         col_orders.create_index([('overall_status', ASCENDING)], name='ix_overall_status')
         col_orders.create_index([('current_step_index', ASCENDING)], name='ix_current_step_index')
+        # 자주 필터/정렬되는 추가 필드 인덱스 (체크리스트 기준): due_date / last_updated / phase
+        try:
+            col_orders.create_index([('due_date', ASCENDING)], name='ix_due_date')
+        except Exception:
+            pass
+        try:
+            col_orders.create_index([('last_updated', ASCENDING)], name='ix_last_updated')
+        except Exception:
+            pass
+        try:
+            col_orders.create_index([('phase', ASCENDING)], name='ix_phase')
+        except Exception:
+            pass
         try:
             col_orders.create_index([('steps.factory_list.factory_id', ASCENDING)], name='ix_steps_factory_list_factory_id')
         except Exception:
