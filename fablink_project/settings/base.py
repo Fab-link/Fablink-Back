@@ -20,7 +20,9 @@ if DEBUG:
 
 # ALLOWED_HOSTS 환경변수에서 로드 (쉼표로 구분)
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-
+# URL 설정
+APPEND_SLASH = True
+PREPEND_WWW = False
 # Application definition
 DJANGO_APPS = [
     'django.contrib.admin',
