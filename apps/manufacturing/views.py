@@ -968,6 +968,26 @@ def select_bid(request, bid_id):
                     )
                     if getattr(res, 'matched_count', 0) == 0:
                         logger.warning('orders not matched to advance step. order_id=%s', order_id_str)
+                    else:
+                        # 초기 단계 활성화: 샘플 생산 현황(step.index=2)의 첫 stage를 active로 설정
+                        try:
+                            col_orders.update_one(
+                                { '$or': [
+                                    ({ 'order_id': order_id_str } if order_id_str else {}),
+                                    ({ 'order_id': order_id_int } if (order_id_int is not None) else {}),
+                                ] },
+                                {
+                                    '$set': {
+                                        'steps.$[step].stage.$[first].status': 'active',
+                                        'steps.$[step].stage.$[first].end_date': '',
+                                        'last_updated': now_iso_with_minutes()
+                                    }
+                                },
+                                array_filters=[ { 'step.index': 2 }, { 'first.index': 1 } ],
+                                upsert=False
+                            )
+                        except Exception:
+                            logger.exception('Failed to set first stage active for step 2')
                 except Exception:
                     logger.exception('Failed to advance orders.current_step_index to 2')
         except Exception:
@@ -987,3 +1007,147 @@ def select_bid(request, bid_id):
     except Exception as e:
         logger.exception('select_bid error')
         return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@renderer_classes([JSONRenderer])
+def advance_order_stage(request):
+    """
+    공정 단계 진행(공장 버튼 트리거)
+    - 입력(JSON): { order_id: string|int, phase: 'sample'|'main', stage_index?: number }
+    - 동작: 해당 phase의 스텝(샘플=2, 본생산=6)에서
+        1) 현재 active이거나 지정된 stage_index 단계를 status='done', end_date=YYYY-MM-DD로 설정
+        2) 다음 단계 status='active'로 설정
+        3) last_updated 갱신
+    - 권한: 공장주만
+    """
+    try:
+        if not hasattr(request.user, 'factory'):
+            return Response({'detail': '공장주만 접근할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        payload = request.data or {}
+        order_id_raw = payload.get('order_id')
+        phase = (payload.get('phase') or 'sample').strip()
+        stage_index_override = payload.get('stage_index')
+
+        if not order_id_raw:
+            return Response({'detail': 'order_id가 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if phase not in ('sample', 'main'):
+            return Response({'detail': "phase는 'sample' 또는 'main'이어야 합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # step index 결정
+        step_idx = 6 if phase == 'main' else 2
+
+        # 문자열/정수 혼용 저장 고려: $or 매칭
+        order_id_str = str(order_id_raw)
+        try:
+            order_id_int = int(order_id_raw)
+        except Exception:
+            order_id_int = None
+
+        col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+
+        # 현재 문서 조회 (단계 계산을 위해 읽기)
+        doc = col.find_one({ '$or': [
+            ({ 'order_id': order_id_str } if order_id_str else {}),
+            ({ 'order_id': order_id_int } if order_id_int is not None else {}),
+        ] }, projection={ '_id': 0, 'steps': 1, 'factory_id': 1 })
+        if not doc:
+            return Response({'detail': '해당 주문 문서를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # 권한: 해당 문서의 factory_id와 로그인 공장 일치(가능할 때)
+        try:
+            factory_id_in_doc = str(doc.get('factory_id')) if doc.get('factory_id') is not None else None
+            if factory_id_in_doc and factory_id_in_doc != str(request.user.factory.id):
+                return Response({'detail': '해당 주문에 대한 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        except Exception:
+            pass
+
+        steps = doc.get('steps') or []
+        step = None
+        for s in steps:
+            try:
+                if int(s.get('index')) == step_idx:
+                    step = s
+                    break
+            except Exception:
+                continue
+        if not step:
+            return Response({'detail': '대상 단계(step)를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        stages = step.get('stage') or step.get('stages') or []
+        if not isinstance(stages, list) or not stages:
+            return Response({'detail': 'stage 목록이 비어있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 진행 대상 stage 인덱스 결정: override > active > 첫 미완료
+        target_idx = None
+        if stage_index_override is not None:
+            try:
+                target_idx = int(stage_index_override)
+            except Exception:
+                return Response({'detail': 'stage_index는 정수여야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # active 우선 찾기
+            for st in stages:
+                if (st.get('status') or '') == 'active':
+                    target_idx = int(st.get('index') or 0) or None
+                    break
+            if target_idx is None:
+                # 첫 미완료(끝난 날짜가 없는 것)
+                for st in stages:
+                    if not st.get('end_date'):
+                        try:
+                            target_idx = int(st.get('index') or 0)
+                            break
+                        except Exception:
+                            pass
+            if target_idx is None:
+                # 모두 완료
+                return Response({'detail': '모든 단계가 이미 완료되었습니다.'}, status=status.HTTP_200_OK)
+
+        # 다음 단계 인덱스
+        indices = [int(st.get('index') or 0) for st in stages if st.get('index') is not None]
+        if not indices:
+            return Response({'detail': '유효한 stage 인덱스가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        max_idx = max(indices)
+        next_idx = target_idx + 1 if target_idx is not None else None
+
+        # 오늘 날짜 문자열
+        today = timezone.now().date().isoformat()
+
+        # Mongo 업데이트: arrayFilters로 대상 step과 stage를 지정
+        update: dict = {
+            '$set': {
+                'last_updated': now_iso_with_minutes(),
+                # 대상 단계 완료 처리
+                'steps.$[step].stage.$[done].status': 'done',
+                'steps.$[step].stage.$[done].end_date': today,
+            }
+        }
+        array_filters = [ { 'step.index': step_idx }, { 'done.index': target_idx } ]
+
+        # 다음 단계 활성화
+        if next_idx is not None and next_idx <= max_idx:
+            update['$set'].update({
+                'steps.$[step].stage.$[next].status': 'active',
+            })
+            array_filters.append({ 'next.index': next_idx })
+
+        res = col.update_one(
+            { '$or': [
+                ({ 'order_id': order_id_str } if order_id_str else {}),
+                ({ 'order_id': order_id_int } if order_id_int is not None else {}),
+            ] },
+            update,
+            array_filters=array_filters,
+            upsert=False,
+        )
+
+        if getattr(res, 'matched_count', 0) == 0:
+            return Response({'detail': '업데이트할 문서를 찾지 못했습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({'detail': '단계가 업데이트되었습니다.', 'done_stage_index': target_idx, 'next_stage_index': next_idx}, status=status.HTTP_200_OK)
+    except Exception:
+        logger.exception('advance_order_stage error')
+        return Response({'detail': '서버 오류가 발생했습니다.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
