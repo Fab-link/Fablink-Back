@@ -135,8 +135,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:9000')
 MONGODB_DB = os.getenv('MONGODB_DB', 'fablink')
 MONGODB_COLLECTIONS = {
-    'designer_orders': os.getenv('MONGODB_COLLECTION_DESIGNER', 'designer_orders'),
-    'factory_orders': os.getenv('MONGODB_COLLECTION_FACTORY', 'factory_orders'),
+    'orders': os.getenv('MONGODB_COLLECTION_ORDERS', 'orders'),
+    # legacy collections removed (designer_orders, factory_orders)
 }
 
 # CORS configuration

@@ -43,8 +43,7 @@ set +a
 # 기본값 처리 및 URI 파싱
 MONGODB_URI="${MONGODB_URI:-mongodb://localhost:9000}"
 DB_NAME="${MONGODB_DB:-fablink}"
-DESIGNER_COLL="${MONGODB_COLLECTION_DESIGNER:-designer_orders}"
-FACTORY_COLL="${MONGODB_COLLECTION_FACTORY:-factory_orders}"
+ORDERS_COLL="${MONGODB_COLLECTION_ORDERS:-orders}"
 
 # mongodb://[auth@]host:port[/...]
 _URI_NO_SCHEME="${MONGODB_URI#mongodb://}"
@@ -164,8 +163,7 @@ echo ""; log_success "🎉 MongoDB 설치/설정 완료"
 echo -e "${BLUE}📋 요약:${NC}"
 echo "   🌐 URI: ${MONGODB_URI}"
 echo "   🗄  DB : ${DB_NAME}"
-echo "   📦 컬렉션(디자이너): ${DESIGNER_COLL}"
-echo "   📦 컬렉션(공장)   : ${FACTORY_COLL}"
+echo "   📦 컬렉션(주문)   : ${ORDERS_COLL}"
 echo "   � env 파일: ${ENV_FILE} (.env.local 고정)"
 echo ""
 echo -e "${YELLOW}🚀 다음 단계:${NC}"

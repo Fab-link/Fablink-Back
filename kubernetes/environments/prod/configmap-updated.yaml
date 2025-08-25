@@ -53,5 +53,4 @@ data:
   # MongoDB 설정 (필요시)
   MONGODB_URI: "mongodb://localhost:27017"
   MONGODB_DB: "fablink_prod"
-  MONGODB_COLLECTION_DESIGNER: "designer_orders"
-  MONGODB_COLLECTION_FACTORY: "factory_orders"
+  MONGODB_COLLECTION_ORDERS: "orders"

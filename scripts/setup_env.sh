@@ -90,8 +90,7 @@ create_local_env_file() {
             -e 's/PAYMENT_GATEWAY_SECRET=.*/PAYMENT_GATEWAY_SECRET=test-payment-secret/' \
             -e 's|MONGODB_URI=.*|MONGODB_URI=mongodb://localhost:9000|' \
             -e 's/MONGODB_DB=.*/MONGODB_DB=fablink/' \
-            -e 's/MONGODB_COLLECTION_DESIGNER=.*/MONGODB_COLLECTION_DESIGNER=designer_orders/' \
-            -e 's/MONGODB_COLLECTION_FACTORY=.*/MONGODB_COLLECTION_FACTORY=factory_orders/' )
+            -e 's/MONGODB_COLLECTION_ORDERS=.*/MONGODB_COLLECTION_ORDERS=orders/' )
             
     elif [ "$env_type" = "dev" ]; then
         envContent=$(echo "$envContent" | sed \
@@ -148,8 +147,7 @@ create_local_env_file() {
             -e 's/SENTRY_ENVIRONMENT=.*/SENTRY_ENVIRONMENT=production/' \
             -e 's|MONGODB_URI=.*|MONGODB_URI=mongodb://localhost:9000|' \
             -e 's/MONGODB_DB=.*/MONGODB_DB=fablink/' \
-            -e 's/MONGODB_COLLECTION_DESIGNER=.*/MONGODB_COLLECTION_DESIGNER=designer_orders/' \
-            -e 's/MONGODB_COLLECTION_FACTORY=.*/MONGODB_COLLECTION_FACTORY=factory_orders/' )
+            -e 's/MONGODB_COLLECTION_ORDERS=.*/MONGODB_COLLECTION_ORDERS=orders/' )
     fi
     
     # 파일 생성

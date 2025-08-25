@@ -19,10 +19,20 @@ def _extract_phase_from_bid(bid: BidFactory) -> str:
 
 @receiver(post_save, sender=BidFactory)
 def upsert_factory_order_on_award(sender, instance: BidFactory, created: bool, **kwargs):
+    """LEGACY (factory_orders) upsert hook.
+
+    NOTE: Unified Mongo collection 'orders' is now the single source of truth.
+    If settings.MONGODB_COLLECTIONS does NOT contain 'factory_orders', this
+    handler becomes a NO-OP to avoid KeyError and duplicate documents.
+
+    Retained temporarily for backward compatibility; safe to remove once
+    legacy data paths are fully deprecated.
     """
-    On bid award (is_matched=True), upsert a factory_orders document keyed by
-    (order_id, phase, factory_id). Uses Option B: create when factory assignment happens.
-    """
+    # Skip entirely if unified collection active (no legacy key)
+    collections = getattr(settings, 'MONGODB_COLLECTIONS', {}) or {}
+    if 'factory_orders' not in collections:
+        return
+
     # Only act when the bid is marked as matched
     if not instance.is_matched:
         return
@@ -71,7 +81,8 @@ def upsert_factory_order_on_award(sender, instance: BidFactory, created: bool, *
         'delivery_code': '',
     }
 
-    col = get_collection(settings.MONGODB_COLLECTIONS['factory_orders'])
+    # Safe access (guarded above)
+    col = get_collection(collections['factory_orders'])
 
     update_doc = {
         '$setOnInsert': {

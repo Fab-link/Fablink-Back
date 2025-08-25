@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+"""Unified 'orders' steps template.
+
+이 파일은 MongoDB unified orders 문서에 삽입될 기본 steps 구조를 정의한다.
+프론트엔드 order_schema.json 과 key/shape 를 맞추며, 필드는 비어있는 기본값으로 초기화.
+테스트/검증 스크립트가 shape 을 비교할 수 있도록 list 필드는 1개 샘플 element 를 포함할 수 있다.
+"""
+
 from typing import List, Dict, Any
+
+__all__ = ["build_orders_steps_template"]
 
 
 def build_orders_steps_template() -> List[Dict[str, Any]]:
@@ -21,7 +30,7 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
                     "name": "",
                     "contact": "",
                     "address": "",
-                    "work_price": None,
+                    "work_price": 0,
                     "currency": "KRW",
                     "expect_work_day": "",
                 }
@@ -29,7 +38,7 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
         },
         {
             "index": 2,
-            "name": "샘플 생산 현황",  # schema 상 누락되었던 name 보강 (프론트 fallback 제거 위함)
+            "name": "샘플 생산 현황",
             "status": "",
             "factory_name": "",
             "order_date": "",
@@ -79,7 +88,6 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
             "factory_list": [
                 {
                     "id": "",
-                    "profile_image": "",
                     "name": "",
                     "contact": "",
                     "address": "",
@@ -98,7 +106,7 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
                 {"index": 3, "name": "마킹 및 재단", "status": "", "end_date": ""},
                 {"index": 4, "name": "봉제",         "status": "", "end_date": ""},
                 {"index": 5, "name": "검사 및 다림질", "status": "", "end_date": ""},
-                {"index": 6, "name": "배송",         "status": "", "end_date": ""},
+                {"index": 6, "name": "배송",         "status": "", "end_date": "", "delivery_code": ""},
             ],
         },
         {
