@@ -29,18 +29,18 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
         },
         {
             "index": 2,
-            "name": "샘플 생산 현황",
+            "name": "샘플 생산 현황",  # schema 상 누락되었던 name 보강 (프론트 fallback 제거 위함)
             "status": "",
             "factory_name": "",
             "order_date": "",
             "factory_contact": "",
             "stage": [
-                { "index": 1, "name": "1차 가봉",       "status": "", "end_date": "" },
-                { "index": 2, "name": "부자재 부착",   "status": "", "end_date": "" },
-                { "index": 3, "name": "마킹 및 재단",   "status": "", "end_date": "" },
-                { "index": 4, "name": "봉제",           "status": "", "end_date": "" },
-                { "index": 5, "name": "검사 및 다림질", "status": "", "end_date": "" },
-                { "index": 6, "name": "배송",           "status": "", "end_date": "", "delivery_code": "" }
+                {"index": 1, "name": "1차 가봉",       "status": "", "end_date": ""},
+                {"index": 2, "name": "부자재 부착",   "status": "", "end_date": ""},
+                {"index": 3, "name": "마킹 및 재단",   "status": "", "end_date": ""},
+                {"index": 4, "name": "봉제",           "status": "", "end_date": ""},
+                {"index": 5, "name": "검사 및 다림질", "status": "", "end_date": ""},
+                {"index": 6, "name": "배송",           "status": "", "end_date": "", "delivery_code": ""},
             ],
         },
         {
@@ -93,12 +93,12 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
             "name": "본 생산 현황",
             "status": "",
             "stage": [
-                { "index": 1, "name": "1차 가봉",       "status": "", "end_date": "" },
-                { "index": 2, "name": "부자재 부착",   "status": "", "end_date": "" },
-                { "index": 3, "name": "마킹 및 재단",   "status": "", "end_date": "" },
-                { "index": 4, "name": "봉제",           "status": "", "end_date": "" },
-                { "index": 5, "name": "검사 및 다림질", "status": "", "end_date": "" },
-                { "index": 6, "name": "배송",           "status": "", "end_date": "" }
+                {"index": 1, "name": "1차 가봉",     "status": "", "end_date": ""},
+                {"index": 2, "name": "부자재 부착", "status": "", "end_date": ""},
+                {"index": 3, "name": "마킹 및 재단", "status": "", "end_date": ""},
+                {"index": 4, "name": "봉제",         "status": "", "end_date": ""},
+                {"index": 5, "name": "검사 및 다림질", "status": "", "end_date": ""},
+                {"index": 6, "name": "배송",         "status": "", "end_date": ""},
             ],
         },
         {

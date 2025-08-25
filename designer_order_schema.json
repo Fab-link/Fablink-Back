@@ -52,6 +52,7 @@
     },
     {
       "index": 2,
+      "name": "샘플 생산 현황",
       "status": "string",
       "factory_name": "string",
       "order_date": "date",
@@ -124,7 +125,7 @@
           "chat_room_id": "string"
         },
         {
-          "index": 1,
+          "index": 2,
           "id": "string",
           "title": "1차 피드백",
           "status": "string",
@@ -167,31 +168,37 @@
       "status": "string",
       "stage": [
         {
+          "index": 1,
           "name": "1차 가봉",
           "status": "string",
           "end_date": "date"
         },
         {
+          "index": 2,
           "name": "부자재 부착",
           "status": "string",
           "end_date": "date"
         },
         {
+          "index": 3,
           "name": "마킹 및 재단",
           "status": "string",
           "end_date": "date"
         },
         {
+          "index": 4,
           "name": "봉제",
           "status": "string",
           "end_date": "date"
         },
         {
+          "index": 5,
           "name": "검사 및 다림질",
           "status": "string",
           "end_date": "date"
         },
         {
+          "index": 6,
           "name": "배송",
           "status": "string",
           "end_date": "date"
