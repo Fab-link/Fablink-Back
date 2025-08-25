@@ -274,6 +274,7 @@ def get_factory_orders(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@renderer_classes([JSONRenderer])  # force snake_case to match frontend expectations
 def get_designer_orders(request):
     """
     디자이너용 주문 목록 조회
@@ -282,27 +283,46 @@ def get_designer_orders(request):
         # 디자이너 권한 확인
         if not hasattr(request.user, 'designer'):
             return Response({'detail': '디자이너만 접근할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
-        
-        # 해당 디자이너의 주문들 조회
-        orders_qs = Order.objects.filter(
-            product__designer=request.user.designer
-        ).select_related('product').prefetch_related('request_orders')
 
-        # 평가를 위해 리스트로 고정 (배치 Mongo 조회를 위해 order_id 수집)
+        # 해당 디자이너의 주문들 조회
+        orders_qs = (
+            Order.objects.filter(product__designer=request.user.designer)
+            .select_related('product')
+            .prefetch_related('request_orders')
+        )
         orders = list(orders_qs)
 
-    # Mongo(orders)에서 current_step_index 및 steps 등 배치 조회
-        current_idx_map = {}
-        steps_map = {}
-        overall_status_map = {}
-        last_updated_map = {}
+        # Mongo(orders)에서 current_step_index 및 steps 등 배치 조회
+        current_idx_map: dict[str, int] = {}
+        steps_map: dict[str, list] = {}
+        overall_status_map: dict[str, str] = {}
+        last_updated_map: dict[str, str] = {}
         try:
-            order_ids = [str(o.order_id) for o in orders if getattr(o, 'order_id', None) is not None]
-            if order_ids:
-                col_designer = get_collection(settings.MONGODB_COLLECTIONS['orders'])
-                cur = col_designer.find(
-                    { 'order_id': { '$in': order_ids } },
-                    projection={ '_id': 0, 'order_id': 1, 'current_step_index': 1, 'steps': 1, 'overall_status': 1, 'last_updated': 1 }
+            order_ids_str = [str(o.order_id) for o in orders if getattr(o, 'order_id', None) is not None]
+            order_ids_int = []
+            for o in orders:
+                try:
+                    if getattr(o, 'order_id', None) is not None:
+                        order_ids_int.append(int(o.order_id))
+                except Exception:
+                    pass
+            if order_ids_str or order_ids_int:
+                col_orders = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+                query = {'$or': []}
+                if order_ids_str:
+                    query['$or'].append({'order_id': {'$in': order_ids_str}})
+                if order_ids_int:
+                    query['$or'].append({'order_id': {'$in': order_ids_int}})
+                cur = col_orders.find(
+                    query,
+                    projection={
+                        '_id': 0,
+                        'order_id': 1,
+                        'current_step_index': 1,
+                        'steps': 1,
+                        'overall_status': 1,
+                        'last_updated': 1,
+                    },
                 )
                 for doc in cur:
                     oid = str(doc.get('order_id'))
@@ -322,9 +342,8 @@ def get_designer_orders(request):
 
         orders_data = []
         for order in orders:
-            # RequestOrder 정보 가져오기
             request_order = order.request_orders.first()
-            
+            oid = str(order.order_id)
             order_data = {
                 'id': order.order_id,
                 'order_id': order.order_id,
@@ -343,17 +362,16 @@ def get_designer_orders(request):
                     'designerName': order.product.designer.name,
                 },
                 # 진행 단계: Mongo orders.current_step_index 우선 사용(기본 1)
-                'current_step_index': current_idx_map.get(str(order.order_id), 1),
-                # 세부 단계 데이터: Mongo steps 그대로 포함
-                'steps': steps_map.get(str(order.order_id)),
-                'overall_status': overall_status_map.get(str(order.order_id), ''),
-                'last_updated': last_updated_map.get(str(order.order_id)),
+                'current_step_index': current_idx_map.get(oid, 1),
+                # 세부 단계 데이터: Mongo steps, 없으면 템플릿 제공
+                'steps': steps_map.get(oid) or build_orders_steps_template(),
+                'overall_status': overall_status_map.get(oid, ''),
+                'last_updated': last_updated_map.get(oid),
             }
-            
             orders_data.append(order_data)
-        
+
         return Response({'results': orders_data}, status=status.HTTP_200_OK)
-        
+
     except Exception as e:
         logger.exception('get_designer_orders error')
         return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -394,7 +412,11 @@ def get_factory_orders_mongo(request):
 
         factory_id = str(request.user.factory.id)
 
-        q: dict = { 'factory_id': factory_id }
+        # Match docs where factory_id may be stored as string or int
+        q: dict = { '$or': [
+            { 'factory_id': factory_id },
+            { 'factory_id': int(factory_id) if factory_id.isdigit() else -1 }
+        ] }
         if phase:
             q['phase'] = phase
         if status_filter:
@@ -795,6 +817,24 @@ def create_factory_bid(request):
                         'orders not matched on $push. order_id=%s (check order doc creation and type).',
                         order_id_str
                     )
+
+                # 3) placeholder 정리: 템플릿에 포함된 빈 항목(factory_id가 '' 또는 null)을 제거
+                try:
+                    col.update_one(
+                        { 'order_id': order_id_str },
+                        {
+                            '$pull': {
+                                'steps.$[step].factory_list': {
+                                    '$or': [ { 'factory_id': '' }, { 'factory_id': None } ]
+                                }
+                            },
+                            '$set': { 'last_updated': now_iso_with_minutes() }
+                        },
+                        array_filters=[ { 'step.index': 1 } ],
+                        upsert=False
+                    )
+                except Exception:
+                    logger.exception('Failed to cleanup placeholder from orders.steps[1].factory_list')
             except Exception:
                 # Mongo 반영 실패는 bid 생성 자체를 실패로 만들지 않음(로그만 남김)
                 logger.exception('Failed to push factory item into orders.steps[1].factory_list')
@@ -885,6 +925,7 @@ def select_bid(request, bid_id):
                 '$set': {
                     'designer_id': designer_id,
                     'product_id': product_id,
+                    # Ensure factory_id is stored as string to match API filters
                     'factory_id': factory_id,
                     'factory_name': getattr(factory, 'name', ''),
                     'factory_contact': getattr(factory, 'contact', ''),
@@ -908,14 +949,20 @@ def select_bid(request, bid_id):
         try:
             try:
                 order_id_str = str(bid.request_order.order.order_id)
+                order_id_int = int(bid.request_order.order.order_id)
             except Exception:
                 order_id_str = None
+                order_id_int = None
 
-            if order_id_str:
+            if order_id_str or order_id_int is not None:
                 try:
                     col_orders = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+                    # match both string and int order_id for legacy docs
                     res = col_orders.update_one(
-                        { 'order_id': order_id_str },
+                        { '$or': [
+                            ({ 'order_id': order_id_str } if order_id_str else {}),
+                            ({ 'order_id': order_id_int } if (order_id_int is not None) else {}),
+                        ] },
                         { '$set': { 'current_step_index': 2, 'last_updated': now_iso_with_minutes() } },
                         upsert=False
                     )
