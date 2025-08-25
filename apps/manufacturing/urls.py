@@ -4,7 +4,7 @@ from .views import (
     ProductViewSet, OrderViewSet, submit_manufacturing,
     create_factory_bid, get_bids_by_order, select_bid,
     get_orders_mongo, get_order_mongo, update_order_progress_mongo,
-    has_factory_bid,
+    has_factory_bid, get_factory_quotes,
 )
 
 router = DefaultRouter()
@@ -22,4 +22,6 @@ urlpatterns = [
     path('bids/by_order/', get_bids_by_order, name='get-bids-by-order'),
     path('bids/has_bid/', has_factory_bid, name='has-factory-bid'),
     path('bids/<int:bid_id>/select/', select_bid, name='select-bid'),
+    # RequestOrder 기반 공장 견적 요청 목록
+    path('factory/quotes/', get_factory_quotes, name='factory-quotes'),
 ]

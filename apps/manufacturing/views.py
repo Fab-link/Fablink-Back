@@ -490,6 +490,83 @@ def has_factory_bid(request):
         return Response({'detail': '서버 오류'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@renderer_classes([JSONRenderer])
+def get_factory_quotes(request):
+    """공장 견적 요청 목록 (RequestOrder 기반)
+    - 대상: 로그인한 factory 사용자만
+    - 필터: RequestOrder.status in (sample_pending, product_pending)
+    - 응답 필드:
+        request_order_id, order_id, status, quantity, due_date, work_sheet_url,
+        product_info: { name, season, target, concept, detail, size, quantity, dueDate, memo, imageUrl, workSheetUrl },
+        designer: { id, name, contact, address }
+    프론트 요구사항: 카드 표시용 designer 이름/전화/주소, 제품 수량/작업지시서 URL 제공
+    """
+    try:
+        if not hasattr(request.user, 'factory'):
+            return Response({'detail': '공장 사용자만 접근 가능합니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = (RequestOrder.objects
+              .select_related('order__product__designer')
+              .filter(status__in=['sample_pending', 'product_pending']))
+
+        # 향후 페이징 필요 시 page/page_size 파라미터 처리 가능 (현재 최대 500 제한)
+        page_size = 500
+        items = []
+        for ro in qs.order_by('-id')[:page_size]:
+            product = getattr(ro.order, 'product', None)
+            designer = getattr(product, 'designer', None) if product else None
+            # 파일 URL 구성
+            def _abs(u):
+                if not u:
+                    return None
+                try:
+                    return request.build_absolute_uri(u)
+                except Exception:
+                    return u
+            work_sheet_url = _abs(ro.work_sheet_path.url) if ro.work_sheet_path else None
+            product_image_url = _abs(product.image_path.url) if (product and product.image_path) else None
+            product_work_sheet_url = _abs(product.work_sheet_path.url) if (product and product.work_sheet_path) else None
+            product_info = {
+                'id': product.id if product else None,
+                'name': product.name if product else ro.product_name,
+                'season': getattr(product, 'season', ''),
+                'target': getattr(product, 'target', ''),
+                'concept': getattr(product, 'concept', ''),
+                'detail': getattr(product, 'detail', ''),
+                'size': getattr(product, 'size', ''),
+                'quantity': getattr(product, 'quantity', None) or ro.quantity,
+                'dueDate': getattr(product, 'due_date', None) or ro.due_date,
+                'memo': getattr(product, 'memo', ''),
+                'imageUrl': product_image_url,
+                'workSheetUrl': work_sheet_url or product_work_sheet_url,
+                'designerName': getattr(designer, 'name', ro.designer_name),
+                'designerContact': getattr(designer, 'contact', ''),
+                'designerAddress': getattr(designer, 'address', ''),
+            }
+            items.append({
+                'request_order_id': ro.id,
+                'order_id': ro.order.order_id,
+                'status': ro.status,
+                'quantity': ro.quantity,
+                'due_date': ro.due_date.isoformat() if ro.due_date else None,
+                'work_sheet_url': work_sheet_url,
+                'productInfo': product_info,
+                'customerName': product_info['designerName'],
+                'customerContact': product_info['designerContact'],
+                'shippingAddress': product_info['designerAddress'],
+                # 하위 로직 호환 필드
+                'orderId': ro.order.order_id,
+                'createdAt': getattr(product, 'created_at', None) or timezone.now().isoformat(),
+            })
+
+        return Response({'count': len(items), 'results': items}, status=status.HTTP_200_OK)
+    except Exception:
+        logger.exception('get_factory_quotes error')
+        return Response({'detail': '서버 오류가 발생했습니다.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_factory_bid(request):
