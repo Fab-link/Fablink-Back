@@ -4,7 +4,7 @@ from .views import (
     ProductViewSet, OrderViewSet, submit_manufacturing,
     create_factory_bid, get_bids_by_order, select_bid,
     get_orders_mongo, get_order_mongo, update_order_progress_mongo,
-    initialize_order, has_factory_bid,
+    has_factory_bid,
 )
 
 router = DefaultRouter()
@@ -14,7 +14,6 @@ router.register(r'orders', OrderViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('submit/', submit_manufacturing, name='manufacturing-submit'),
-    path('orders/initialize/', initialize_order, name='orders-initialize'),
     # Unified orders (Mongo) list & detail/progress
     path('orders/', get_orders_mongo, name='orders-mongo'),
     path('orders/<str:order_id>/', get_order_mongo, name='order-mongo-detail'),

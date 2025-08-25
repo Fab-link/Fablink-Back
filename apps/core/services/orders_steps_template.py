@@ -30,7 +30,7 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
                     "name": "",
                     "contact": "",
                     "address": "",
-                    "work_price": None,
+                    "work_price": 0,
                     "currency": "KRW",
                     "expect_work_day": "",
                 }
@@ -38,7 +38,7 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
         },
         {
             "index": 2,
-            "name": "샘플 생산 현황",  # schema 상 누락되었던 name 보강 (프론트 fallback 제거 위함)
+            "name": "샘플 생산 현황",
             "status": "",
             "factory_name": "",
             "order_date": "",
@@ -88,7 +88,6 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
             "factory_list": [
                 {
                     "id": "",
-                    "profile_image": "",
                     "name": "",
                     "contact": "",
                     "address": "",
@@ -107,7 +106,7 @@ def build_orders_steps_template() -> List[Dict[str, Any]]:
                 {"index": 3, "name": "마킹 및 재단", "status": "", "end_date": ""},
                 {"index": 4, "name": "봉제",         "status": "", "end_date": ""},
                 {"index": 5, "name": "검사 및 다림질", "status": "", "end_date": ""},
-                {"index": 6, "name": "배송",         "status": "", "end_date": ""},
+                {"index": 6, "name": "배송",         "status": "", "end_date": "", "delivery_code": ""},
             ],
         },
         {

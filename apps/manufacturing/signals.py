@@ -39,8 +39,37 @@ def create_or_update_unified_order(sender, instance: Order, created: bool, **kwa
     # Upsert into collection
     col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
 
-    # set defaults for steps only if creating new; avoid overwriting user progress later
-    # IMPORTANT: Do not update the same field in both $set and $setOnInsert to prevent conflicts.
+    # ----- Initial meta field derivation (schema alignment) -----
+    # Product meta
+    product_name = getattr(product, 'name', '') or ''
+    product_quantity = getattr(product, 'quantity', None)
+    if product_quantity is None:
+        product_quantity = 0
+    product_due_date = getattr(product, 'due_date', None)
+    if product_due_date:
+        try:
+            product_due_date = product_due_date.isoformat()
+        except Exception:
+            product_due_date = ''
+    else:
+        product_due_date = ''
+
+    # Designer meta
+    designer = getattr(product, 'designer', None)
+    designer_name = getattr(designer, 'name', '') if designer else ''
+    designer_contact = getattr(designer, 'contact', '') if designer else ''
+
+    # Factory meta (none at initial creation)
+    factory_id = ''
+    factory_name = ''
+    factory_contact = ''
+    factory_address = ''
+
+    # Order meta
+    order_date = timezone.now().date().isoformat()
+
+    # ----- Document update spec -----
+    # IMPORTANT: Avoid putting same key in both $setOnInsert and $set.
     update_doc = {
         '$setOnInsert': {
             'order_id': order_id_str,
@@ -48,8 +77,21 @@ def create_or_update_unified_order(sender, instance: Order, created: bool, **kwa
             'overall_status': '',
             'phase': 'sample',  # default initial phase
             'steps': build_orders_steps_template(),
+            # schema meta initial snapshot
+            'product_name': product_name,
+            'quantity': product_quantity,
+            'due_date': product_due_date,
+            'designer_name': designer_name,
+            'designer_contact': designer_contact,
+            'work_price': 0,  # until bids populate
+            'factory_id': factory_id,
+            'factory_name': factory_name,
+            'factory_contact': factory_contact,
+            'factory_address': factory_address,
+            'order_date': order_date,
         },
         '$set': {
+            # stable references & mutable timestamps
             'designer_id': designer_id_str,
             'product_id': product_id_str,
             'last_updated': now_iso_with_minutes(),
