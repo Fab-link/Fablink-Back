@@ -14,10 +14,14 @@ router.register(r'orders', OrderViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('submit/', submit_manufacturing, name='manufacturing-submit'),
-    # Unified orders (Mongo) list & detail/progress
-    path('orders/', get_orders_mongo, name='orders-mongo'),
-    path('orders/<str:order_id>/', get_order_mongo, name='order-mongo-detail'),
-    path('orders/<str:order_id>/progress/', update_order_progress_mongo, name='order-mongo-progress'),
+    # Unified orders (Mongo) list & detail/progress (신규 비충돌 경로)
+    path('orders-mongo/', get_orders_mongo, name='orders-mongo-list'),
+    path('orders-mongo/<str:order_id>/', get_order_mongo, name='orders-mongo-detail'),
+    path('orders-mongo/<str:order_id>/progress/', update_order_progress_mongo, name='orders-mongo-progress'),
+    # (구) 충돌 경로 - 점진적 마이그레이션 위해 일시 유지. 프론트 교체 후 제거 예정.
+    path('orders/', get_orders_mongo, name='orders-mongo-legacy'),
+    path('orders/<str:order_id>/', get_order_mongo, name='order-mongo-detail-legacy'),
+    path('orders/<str:order_id>/progress/', update_order_progress_mongo, name='order-mongo-progress-legacy'),
     path('bids/', create_factory_bid, name='create-factory-bid'),
     path('bids/by_order/', get_bids_by_order, name='get-bids-by-order'),
     path('bids/has_bid/', has_factory_bid, name='has-factory-bid'),

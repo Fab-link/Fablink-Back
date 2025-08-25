@@ -323,27 +323,11 @@ def get_orders_mongo(request):
             ]
 
         total = col.count_documents(base_query)
+        # 전체 문서가 필요하다는 요구사항(/factory/orders/ 전체 필드 표시) 반영: projection 제거하여 _id 제외 모든 필드 반환
+        # (주의) 문서 크기 증가에 따른 네트워크 비용 상승 가능 → 필요시 page_size 조절 또는 full=0/1 파라미터 도입 고려
         cursor = col.find(
             base_query,
-            projection={
-                '_id': 0,
-                'order_id': 1,
-                'product_id': 1,
-                'designer_id': 1,
-                'factory_id': 1,
-                'quantity': 1,
-                'work_price': 1,
-                'overall_status': 1,
-                'current_step_index': 1,
-                'phase': 1,
-                'order_date': 1,
-                'due_date': 1,
-                'last_updated': 1,
-                'steps': 1,
-                'product_name': 1,
-                'designer_name': 1,
-                'factory_name': 1,
-            }
+            projection={'_id': 0}  # _id만 제거, 나머지 전체
         ).sort('last_updated', -1).skip((page-1)*page_size).limit(page_size)
         items = list(cursor)
 
@@ -354,6 +338,100 @@ def get_orders_mongo(request):
             except Exception:
                 logger.exception('stage integrity repair error (order_id=%s)', it.get('order_id'))
 
+        # --- Meta enrichment: Mongo 문서에 누락된 상위 메타(designer_name, product_name, quantity, due_date) 보강 ---
+        # 기존 문서(과거 생성)들이 초기 upsert 시 이름/메타를 채우지 않아 프론트에서 '-' 노출되는 문제 해결.
+        # N회 find_one 대신 product_id 모아서 bulk ORM 조회 후 메모리에 매핑.
+        try:
+            need_enrich: list[dict] = []
+            product_ids: set[int] = set()
+            for it in items:
+                # 누락 판정: 하나라도 비어 있으면 enrichment 대상 (work_price 포함)
+                cond_missing_meta = not (it.get('designer_name') and it.get('product_name') and it.get('quantity') and it.get('due_date'))
+                cond_missing_price = it.get('work_price') in (None, '', 0)
+                if cond_missing_meta or cond_missing_price:
+                    pid_raw = it.get('product_id') or it.get('productId')
+                    try:
+                        if pid_raw is not None:
+                            pid_int = int(pid_raw)
+                            product_ids.add(pid_int)
+                            need_enrich.append(it)
+                    except Exception:
+                        continue
+            if need_enrich and product_ids:
+                prod_qs = Product.objects.filter(id__in=product_ids).select_related('designer')
+                prod_map = {p.id: p for p in prod_qs}
+                for it in need_enrich:
+                    pid_raw = it.get('product_id') or it.get('productId')
+                    try:
+                        pid_int = int(pid_raw)
+                    except Exception:
+                        continue
+                    p = prod_map.get(pid_int)
+                    if not p:
+                        continue
+                    changed = False
+                    # 제품/디자이너 메타
+                    if not it.get('product_name'):
+                        it['product_name'] = p.name or ''
+                        changed = True
+                    if not it.get('designer_name'):
+                        try:
+                            designer_nm = getattr(p.designer, 'name', '') or ''
+                        except Exception:
+                            designer_nm = ''
+                        it['designer_name'] = designer_nm
+                        # 프론트 별칭도 함께 (camelCase)
+                        it['designerName'] = designer_nm
+                        changed = True
+                    else:
+                        # designerName alias 가 없으면 추가
+                        if not it.get('designerName'):
+                            it['designerName'] = it.get('designer_name')
+                            changed = True
+                    if not it.get('quantity'):
+                        it['quantity'] = p.quantity or 0
+                        changed = True
+                    if not it.get('due_date') and getattr(p, 'due_date', None):
+                        try:
+                            it['due_date'] = p.due_date.isoformat()
+                        except Exception:
+                            it['due_date'] = ''
+                        changed = True
+                    # work_price: 선정된 입찰(bid) 기반 상단 work_price 미기록 문서 처리.
+                    # 우선 steps[0].factory_list 에 bid 정보(work_price)가 있으면 그 중 최소값(또는 첫 값)을 채움.
+                    if it.get('work_price') in (None, '', 0):
+                        try:
+                            steps_arr = it.get('steps') or []
+                            if isinstance(steps_arr, list) and steps_arr:
+                                fac_list = steps_arr[0].get('factory_list') if isinstance(steps_arr[0], dict) else None
+                                if isinstance(fac_list, list) and fac_list:
+                                    prices = [f.get('work_price') for f in fac_list if isinstance(f, dict) and isinstance(f.get('work_price'), (int, float)) and f.get('work_price') > 0]
+                                    if prices:
+                                        it['work_price'] = min(prices)
+                                        changed = True
+                        except Exception:
+                            pass
+                    if changed:
+                        try:
+                            update_fields = {
+                                'product_name': it.get('product_name'),
+                                'designer_name': it.get('designer_name'),
+                                'quantity': it.get('quantity'),
+                                'due_date': it.get('due_date'),
+                                'last_updated': now_iso_with_minutes(),
+                            }
+                            if it.get('work_price') not in (None, '', 0):
+                                update_fields['work_price'] = it.get('work_price')
+                            col.update_one(
+                                {'order_id': it.get('order_id')},
+                                {'$set': update_fields},
+                                upsert=False
+                            )
+                        except Exception:
+                            logger.exception('meta enrichment persist failed (order_id=%s)', it.get('order_id'))
+        except Exception:
+            logger.exception('meta enrichment block failed')
+
         debug_summary = None
         debug_raw_docs = None
         if debug_mode:
@@ -363,11 +441,7 @@ def get_orders_mongo(request):
                     'page': page,
                     'page_size': page_size,
                     'returned': len(items),
-                    'projection_fields': list({
-                        'order_id','product_id','designer_id','factory_id','quantity','work_price','overall_status',
-                        'current_step_index','phase','order_date','due_date','last_updated','steps','product_name',
-                        'designer_name','factory_name'
-                    }),
+                    'projection': 'FULL_DOCUMENT',  # 전체 문서 반환 모드 표시
                 }
                 # 페이지에 표시된 order_id 들의 원본 문서를 projection 없이 추가 (민감정보 최소화 위해 제한)
                 order_ids = [it.get('order_id') for it in items if it.get('order_id')]
