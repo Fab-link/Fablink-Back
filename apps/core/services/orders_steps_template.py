@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+"""Unified 'orders' steps template.
+
+이 파일은 MongoDB unified orders 문서에 삽입될 기본 steps 구조를 정의한다.
+프론트엔드 order_schema.json 과 key/shape 를 맞추며, 필드는 비어있는 기본값으로 초기화.
+테스트/검증 스크립트가 shape 을 비교할 수 있도록 list 필드는 1개 샘플 element 를 포함할 수 있다.
+"""
+
 from typing import List, Dict, Any
+
+__all__ = ["build_orders_steps_template"]
 
 
 def build_orders_steps_template() -> List[Dict[str, Any]]:

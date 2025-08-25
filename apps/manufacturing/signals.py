@@ -2,15 +2,21 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.conf import settings
 from django.utils import timezone
+import logging
 
 from apps.manufacturing.models import Order
 from apps.core.services.mongo import get_collection, ensure_indexes, now_iso_with_minutes
-from apps.core.services.designer_steps_template import build_designer_steps_template
+from apps.core.services.orders_steps_template import build_orders_steps_template
+
+logger = logging.getLogger(__name__)
 
 
 @receiver(post_save, sender=Order)
-def create_or_update_designer_order(sender, instance: Order, created: bool, **kwargs):
-    """On Order creation, upsert a corresponding document in MongoDB designer_orders."""
+def create_or_update_unified_order(sender, instance: Order, created: bool, **kwargs):
+    """On Order creation/update, upsert a corresponding document in unified MongoDB 'orders'.
+
+    Legacy designer_orders/factory_orders will be deprecated; this keeps backward compatibility minimal.
+    """
     # Ensure indexes (idempotent; considered cheap. Alternatively move to app ready())
     try:
         ensure_indexes()
@@ -31,16 +37,17 @@ def create_or_update_designer_order(sender, instance: Order, created: bool, **kw
     product_id_str = str(product_id) if product_id is not None else None
 
     # Upsert into collection
-    col = get_collection(settings.MONGODB_COLLECTIONS['designer_orders'])
+    col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
 
     # set defaults for steps only if creating new; avoid overwriting user progress later
     # IMPORTANT: Do not update the same field in both $set and $setOnInsert to prevent conflicts.
     update_doc = {
         '$setOnInsert': {
             'order_id': order_id_str,
-            'current_step_index': 1,  # small integer per latest requirement
-            'overall_status': '',  # field exists; later changes via dedicated triggers
-            'steps': build_designer_steps_template(),
+            'current_step_index': 1,
+            'overall_status': '',
+            'phase': 'sample',  # default initial phase
+            'steps': build_orders_steps_template(),
         },
         '$set': {
             'designer_id': designer_id_str,
@@ -53,6 +60,8 @@ def create_or_update_designer_order(sender, instance: Order, created: bool, **kw
         # Keep order_id out of $set to avoid conflicts; set only on insert above
         col.update_one({'order_id': order_id_str}, update_doc, upsert=True)
     except Exception as e:
-        # Log minimal info; do not raise to avoid breaking request flow
-        # You may integrate with logging/Sentry
-        print(f"[Mongo] Upsert designer_orders failed for order_id={order_id_str}: {e}")
+        logger.warning(
+            "[Mongo] Upsert unified orders failed for order_id=%s: %s",
+            order_id_str,
+            e,
+        )
