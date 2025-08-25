@@ -14,7 +14,7 @@ from .serializers import (
     RequestOrderSerializer, BidFactorySerializer, BidFactoryCreateSerializer
 )
 from apps.core.services.mongo import get_collection, now_iso_with_minutes, ensure_indexes
-from apps.core.services.orders_steps_template import build_orders_steps_template
+from apps.core.services.factory_steps_template import build_factory_steps_template
 from apps.accounts.models import Designer
 
 logger = logging.getLogger(__name__)
@@ -291,7 +291,7 @@ def get_designer_orders(request):
         # 평가를 위해 리스트로 고정 (배치 Mongo 조회를 위해 order_id 수집)
         orders = list(orders_qs)
 
-    # Mongo(orders)에서 current_step_index 및 steps 등 배치 조회
+        # Mongo(designer_orders)에서 current_step_index 및 steps 등 배치 조회
         current_idx_map = {}
         steps_map = {}
         overall_status_map = {}
@@ -299,7 +299,7 @@ def get_designer_orders(request):
         try:
             order_ids = [str(o.order_id) for o in orders if getattr(o, 'order_id', None) is not None]
             if order_ids:
-                col_designer = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+                col_designer = get_collection(settings.MONGODB_COLLECTIONS['designer_orders'])
                 cur = col_designer.find(
                     { 'order_id': { '$in': order_ids } },
                     projection={ '_id': 0, 'order_id': 1, 'current_step_index': 1, 'steps': 1, 'overall_status': 1, 'last_updated': 1 }
@@ -318,7 +318,7 @@ def get_designer_orders(request):
                         last_updated_map[oid] = doc.get('last_updated')
         except Exception:
             # Mongo 조회 실패 시 전체 흐름을 막지 않음 (기본 1)
-            logger.exception('get_designer_orders: failed to fetch current_step_index from orders')
+            logger.exception('get_designer_orders: failed to fetch current_step_index from designer_orders')
 
         orders_data = []
         for order in orders:
@@ -342,7 +342,7 @@ def get_designer_orders(request):
                     'designer': order.product.designer.id,
                     'designerName': order.product.designer.name,
                 },
-                # 진행 단계: Mongo orders.current_step_index 우선 사용(기본 1)
+                # 진행 단계: Mongo designer_orders.current_step_index 우선 사용(기본 1)
                 'current_step_index': current_idx_map.get(str(order.order_id), 1),
                 # 세부 단계 데이터: Mongo steps 그대로 포함
                 'steps': steps_map.get(str(order.order_id)),
@@ -364,15 +364,15 @@ def get_designer_orders(request):
 @renderer_classes([JSONRenderer])  # force snake_case for this endpoint
 def get_factory_orders_mongo(request):
     """
-    공장주용 orders 목록(MongoDB, 선정된 주문만)
+    공장주용 factory_orders 목록(MongoDB)
     - 인증된 공장 사용자만 접근 가능
     - 기본 정렬: last_updated desc
     - 페이징: ?page=1&page_size=20 (최대 100)
     - 필터: ?phase=sample|main (선택), ?status=...
-        응답 형식:
+    응답 형식:
     {
-            count, page, page_size, has_next,
-            results: [{ order_id, phase, factory_id, overall_status, due_date, quantity, work_price, last_updated, product_id }]
+      count, page, page_size, has_next,
+      results: [{ order_id, phase, factory_id, overall_status, due_date, quantity, unit_price, last_updated, product_id }]
     }
     """
     try:
@@ -400,7 +400,7 @@ def get_factory_orders_mongo(request):
         if status_filter:
             q['overall_status'] = status_filter
 
-        col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+        col = get_collection(settings.MONGODB_COLLECTIONS['factory_orders'])
 
         # 정렬 및 페이징 쿼리
         total = col.count_documents(q)
@@ -413,7 +413,8 @@ def get_factory_orders_mongo(request):
                 'overall_status': 1,
                 'due_date': 1,
                 'quantity': 1,
-                'work_price': 1,
+                'unit_price': 1,
+                'currency': 1,
                 'last_updated': 1,
                 'product_id': 1,
                 'steps': 1,
@@ -467,9 +468,26 @@ def get_factory_orders_mongo(request):
             else:
                 it['designer_name'] = ''
 
-        # Fallback 제거: 단일 orders 컬렉션 사용
+        # Fallback: pull product_id/designer_id from designer_orders if missing
         try:
-            pass
+            missing_ids = [str(it.get('order_id')) for it in items if not it.get('product_id') or not it.get('designer_id')]
+            missing_ids = [oid for oid in missing_ids if oid and oid != 'None']
+            if missing_ids:
+                col_designer = get_collection(settings.MONGODB_COLLECTIONS['designer_orders'])
+                cur2 = col_designer.find(
+                    { 'order_id': { '$in': missing_ids } },
+                    projection={ '_id': 0, 'order_id': 1, 'product_id': 1, 'designer_id': 1 }
+                )
+                di_map = {doc.get('order_id'): doc for doc in cur2}
+                for it in items:
+                    oid = str(it.get('order_id'))
+                    doc = di_map.get(oid)
+                    if not doc:
+                        continue
+                    if not it.get('product_id') and doc.get('product_id'):
+                        it['product_id'] = str(doc.get('product_id'))
+                    if not it.get('designer_id') and doc.get('designer_id'):
+                        it['designer_id'] = str(doc.get('designer_id'))
         except Exception:
             pass
 
@@ -545,7 +563,7 @@ def get_factory_orders_mongo(request):
             # Fallback enrichment should not break API
             pass
 
-    # 필요 시 BidFactory로 보강(선택) — 기본적으로 orders에 work_price/due_date가 존재해야 함
+        # Fill missing unit_price / due_date from BidFactory joined via RequestOrder
         try:
             factory_obj = getattr(request.user, 'factory', None)
             if factory_obj:
@@ -578,8 +596,8 @@ def get_factory_orders_mongo(request):
                             bid = bid_by_ro.get(ro.id)
                             if not bid:
                                 continue
-                            if it.get('work_price') in (None, ''):
-                                it['work_price'] = getattr(bid, 'work_price', None)
+                            if it.get('unit_price') in (None, ''):
+                                it['unit_price'] = getattr(bid, 'work_price', None)
                             if not it.get('due_date') and getattr(bid, 'expect_work_day', None):
                                 try:
                                     it['due_date'] = bid.expect_work_day.isoformat()
@@ -603,7 +621,8 @@ def get_factory_orders_mongo(request):
                         'product_name': it.get('product_name'),
                         'designer_id': it.get('designer_id'),
                         'designer_name': it.get('designer_name'),
-                        'work_price': it.get('work_price'),
+                        'unit_price': it.get('unit_price'),
+                        'currency': it.get('currency'),
                         'due_date': it.get('due_date'),
                         'quantity': it.get('quantity'),
                         'overall_status': it.get('overall_status'),
@@ -614,7 +633,7 @@ def get_factory_orders_mongo(request):
                     'size': len(items),
                     'items': debug_list,
                 }
-                logger.info('orders-mongo debug: %s', debug_payload)
+                logger.info('factory-orders-mongo debug: %s', debug_payload)
             except Exception:
                 logger.exception('failed to build debug payload for factory-orders-mongo')
 
@@ -736,7 +755,7 @@ def create_factory_bid(request):
 
             # Bid 생성 성공 시, 디자이너 Mongo 문서의 step.index=1 factory_list에 항목 push
             try:
-                # 기본 식별값 (orders는 문자열 order_id를 사용하므로 str로 변환)
+                # 기본 식별값 (designer_orders는 문자열 order_id를 사용하므로 str로 변환)
                 order_id_str = str(request_order.order.order_id)
                 factory = request.user.factory
 
@@ -761,8 +780,7 @@ def create_factory_bid(request):
                     'expect_work_day': bid.expect_work_day.strftime('%Y-%m-%d') if getattr(bid, 'expect_work_day', None) else ''
                 }
 
-                # unified 'orders' collection: store bid candidates under steps[1].factory_list
-                col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+                col = get_collection(settings.MONGODB_COLLECTIONS['designer_orders'])
 
                 # 1) 동일 factory_id 항목 제거(중복 방지)
                 res_pull = col.update_one(
@@ -776,7 +794,7 @@ def create_factory_bid(request):
                 )
                 if getattr(res_pull, 'matched_count', 0) == 0:
                     logger.warning(
-                        'orders not matched on $pull. order_id=%s (check order doc creation and type).',
+                        'designer_orders not matched on $pull. order_id=%s (check order doc creation and type).',
                         order_id_str
                     )
 
@@ -792,12 +810,12 @@ def create_factory_bid(request):
                 )
                 if getattr(res_push, 'matched_count', 0) == 0:
                     logger.warning(
-                        'orders not matched on $push. order_id=%s (check order doc creation and type).',
+                        'designer_orders not matched on $push. order_id=%s (check order doc creation and type).',
                         order_id_str
                     )
             except Exception:
                 # Mongo 반영 실패는 bid 생성 자체를 실패로 만들지 않음(로그만 남김)
-                logger.exception('Failed to push factory item into orders.steps[1].factory_list')
+                logger.exception('Failed to push factory item into designer_orders.factory_list')
 
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         else:
@@ -847,7 +865,7 @@ def select_bid(request, bid_id):
             # 상태 업데이트 실패가 전체 플로우를 막지 않도록 로그만 남김
             logger.exception('Failed to update RequestOrder.status to sample_matched')
 
-        # unified orders 문서 갱신 (선정 정보 반영)
+        # factory_orders 문서 upsert (시그널 보조/폴백)
         try:
             ensure_indexes()
         except Exception:
@@ -859,14 +877,20 @@ def select_bid(request, bid_id):
             factory = bid.factory
 
             order_id = str(order.order_id)
-            product_id = str(getattr(product, 'id', None)) if getattr(product, 'id', None) else None
-            designer_id = str(getattr(getattr(product, 'designer', None), 'id', None)) if getattr(product, 'designer', None) else None
-            factory_id = str(getattr(factory, 'id', None)) if getattr(factory, 'id', None) else None
+            product_id = str(product.id) if getattr(product, 'id', None) else None
+            designer_id = str(product.designer.id) if getattr(product, 'designer', None) else None
+            factory_id = str(factory.id) if getattr(factory, 'id', None) else None
 
-            # phase 기본값: sample (본 생산 단계 진입 시 'product'로 업데이트 예정)
-            phase = 'sample'
+            phase = 'sample'  # 샘플 선정 단계 기준
 
-            # 날짜는 문자열로 저장
+            base_doc = {
+                'order_id': order_id,
+                'phase': phase,
+                'factory_id': factory_id,
+                'designer_id': designer_id,
+                'product_id': product_id,
+            }
+            # Mongo에 date를 그대로 넣지 않고 문자열로 변환
             expect_date = getattr(bid, 'expect_work_day', None)
             if hasattr(expect_date, 'isoformat'):
                 try:
@@ -874,37 +898,41 @@ def select_bid(request, bid_id):
                 except Exception:
                     expect_date = None
 
-            col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+            business_fields = {
+                'quantity': getattr(ro, 'quantity', None),
+                'unit_price': getattr(bid, 'work_price', None),
+                'currency': 'KRW',
+                'due_date': expect_date,
+                'delivery_status': '',
+                'delivery_code': '',
+            }
+
+            col = get_collection(settings.MONGODB_COLLECTIONS['factory_orders'])
             update_doc = {
                 '$setOnInsert': {
-                    'order_id': order_id,
+                    **base_doc,
                     'current_step_index': 1,
                     'overall_status': '',
-                    'steps': build_orders_steps_template(),
+                    'steps': build_factory_steps_template(phase),
                 },
                 '$set': {
-                    'designer_id': designer_id,
-                    'product_id': product_id,
-                    'factory_id': factory_id,
-                    'factory_name': getattr(factory, 'name', ''),
-                    'factory_contact': getattr(factory, 'contact', ''),
-                    'factory_address': getattr(factory, 'address', ''),
-                    'work_price': getattr(bid, 'work_price', None),
-                    'quantity': getattr(ro, 'quantity', None),
-                    # no currency at top-level per order_schema.json
-                    'due_date': expect_date,
-                    'phase': phase,
+                    # business fields only here to avoid conflicts on insert
+                    **business_fields,
                     'last_updated': now_iso_with_minutes(),
                 },
             }
             try:
-                col.update_one({'order_id': order_id}, update_doc, upsert=True)
+                col.update_one(
+                    {'order_id': order_id, 'phase': phase, 'factory_id': factory_id},
+                    update_doc,
+                    upsert=True,
+                )
             except Exception:
-                logger.exception('Failed to upsert orders in select_bid')
+                logger.exception('Failed to upsert factory_orders in select_bid')
         except Exception:
-            logger.exception('orders upsert fallback block failed')
+            logger.exception('factory_orders upsert fallback block failed')
 
-        # orders current_step_index is advanced to 2
+        # designer_orders의 current_step_index를 2로 진행
         try:
             try:
                 order_id_str = str(bid.request_order.order.order_id)
@@ -912,20 +940,16 @@ def select_bid(request, bid_id):
                 order_id_str = None
 
             if order_id_str:
-                try:
-                    col_orders = get_collection(settings.MONGODB_COLLECTIONS['orders'])
-                    res = col_orders.update_one(
-                        { 'order_id': order_id_str },
-                        { '$set': { 'current_step_index': 2, 'last_updated': now_iso_with_minutes() } },
-                        upsert=False
-                    )
-                    if getattr(res, 'matched_count', 0) == 0:
-                        logger.warning('orders not matched to advance step. order_id=%s', order_id_str)
-                except Exception:
-                    logger.exception('Failed to advance orders.current_step_index to 2')
+                col_designer = get_collection(settings.MONGODB_COLLECTIONS['designer_orders'])
+                res = col_designer.update_one(
+                    { 'order_id': order_id_str },
+                    { '$set': { 'current_step_index': 2, 'last_updated': now_iso_with_minutes() } },
+                    upsert=False
+                )
+                if getattr(res, 'matched_count', 0) == 0:
+                    logger.warning('designer_orders not matched to advance step. order_id=%s', order_id_str)
         except Exception:
-            # Do not fail selection on step advance errors
-            pass
+            logger.exception('Failed to advance designer_orders.current_step_index to 2')
         
         # 같은 RequestOrder의 다른 입찰들은 거절 처리
         BidFactory.objects.filter(

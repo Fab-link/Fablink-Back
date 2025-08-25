@@ -91,8 +91,7 @@ create_local_env_file() {
             -e 's|MONGODB_URI=.*|MONGODB_URI=mongodb://localhost:9000|' \
             -e 's/MONGODB_DB=.*/MONGODB_DB=fablink/' \
             -e 's/MONGODB_COLLECTION_DESIGNER=.*/MONGODB_COLLECTION_DESIGNER=designer_orders/' \
-            -e 's/MONGODB_COLLECTION_FACTORY=.*/MONGODB_COLLECTION_FACTORY=factory_orders/' \
-            -e 's/MONGODB_COLLECTION_ORDERS=.*/MONGODB_COLLECTION_ORDERS=orders/' )
+            -e 's/MONGODB_COLLECTION_FACTORY=.*/MONGODB_COLLECTION_FACTORY=factory_orders/' )
             
     elif [ "$env_type" = "dev" ]; then
         envContent=$(echo "$envContent" | sed \
@@ -150,8 +149,7 @@ create_local_env_file() {
             -e 's|MONGODB_URI=.*|MONGODB_URI=mongodb://localhost:9000|' \
             -e 's/MONGODB_DB=.*/MONGODB_DB=fablink/' \
             -e 's/MONGODB_COLLECTION_DESIGNER=.*/MONGODB_COLLECTION_DESIGNER=designer_orders/' \
-            -e 's/MONGODB_COLLECTION_FACTORY=.*/MONGODB_COLLECTION_FACTORY=factory_orders/' \
-            -e 's/MONGODB_COLLECTION_ORDERS=.*/MONGODB_COLLECTION_ORDERS=orders/' )
+            -e 's/MONGODB_COLLECTION_FACTORY=.*/MONGODB_COLLECTION_FACTORY=factory_orders/' )
     fi
     
     # 파일 생성
