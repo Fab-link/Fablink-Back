@@ -4,7 +4,9 @@ from . import views
 app_name = 'accounts'
 
 urlpatterns = [
-    # ==================== 로그인 ====================
+    # ==================== 루트 ====================
+    path('', views.accounts_root_view, name='accounts_root'),
+        # ==================== 로그인 ====================
     path('designer/login/', views.designer_login_view, name='designer_login'),
     path('factory/login/', views.factory_login_view, name='factory_login'),
     

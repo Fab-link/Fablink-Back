@@ -23,7 +23,23 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 # URL 설정
 APPEND_SLASH = True
 PREPEND_WWW = False
-# Application definition
+# API Gateway 호환성 설정
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Force script name to None to prevent issues with proxy
+FORCE_SCRIPT_NAME = None
+
+# Admin 페이지 설정 (API Gateway 호환)
+# 상대 경로 사용으로 리다이렉션 루프 방지
+ADMIN_URL = 'admin/'
+LOGIN_URL = 'admin/login/'
+LOGIN_REDIRECT_URL = 'admin/'
+LOGOUT_REDIRECT_URL = 'admin/'
+
+# API Gateway 리다이렉션 루프 방지
+ALLOWED_REDIRECT_HOSTS = ['fablink-api-dev.com', 'localhost', '127.0.0.1']# Application definition
 DJANGO_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
