@@ -1147,6 +1147,109 @@ def advance_order_stage(request):
         if getattr(res, 'matched_count', 0) == 0:
             return Response({'detail': '업데이트할 문서를 찾지 못했습니다.'}, status=status.HTTP_404_NOT_FOUND)
 
+        # 최종 단계 완료 처리: 샘플(step 2)에서 마지막 단계(배송)까지 완료되면
+        try:
+            if phase == 'sample' and (target_idx == max_idx or (next_idx is None) or (next_idx and next_idx > max_idx)):
+                # 보강 정보 수집 (제품명/수량/업체/운송장)
+                product_name = ''
+                try:
+                    pid = doc.get('product_id')
+                    if pid is not None:
+                        try:
+                            pid_int = int(str(pid))
+                            p = Product.objects.filter(id=pid_int).only('name').first()
+                            if p and getattr(p, 'name', None):
+                                product_name = p.name
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                product_quantity = doc.get('quantity') or 0
+                factory_name = doc.get('factory_name') or ''
+                factory_contact = doc.get('factory_contact') or ''
+                # step2 마지막 stage의 운송장 코드 활용 시도
+                try:
+                    last_stage = None
+                    for st in stages:
+                        try:
+                            if int(st.get('index') or 0) == max_idx:
+                                last_stage = st
+                                break
+                        except Exception:
+                            pass
+                    delivery_code = (last_stage or {}).get('delivery_code') or ''
+                except Exception:
+                    delivery_code = ''
+
+                # 1) steps[2].status = 'done' + 2) steps[3] 정보 채우고 done + 3) current_step_index = 3
+                col.update_one(
+                    { '$or': [
+                        ({ 'order_id': order_id_str } if order_id_str else {}),
+                        ({ 'order_id': order_id_int } if order_id_int is not None else {}),
+                    ] },
+                    {
+                        '$set': {
+                            'steps.$[s2].status': 'done',
+                            'steps.$[s3].status': 'done',
+                            'steps.$[s3].product_name': product_name,
+                            'steps.$[s3].product_quantity': product_quantity,
+                            'steps.$[s3].factory_name': factory_name,
+                            'steps.$[s3].factory_contact': factory_contact,
+                            'steps.$[s3].delivery_code': delivery_code,
+                            'last_updated': now_iso_with_minutes(),
+                            'current_step_index': 3,
+                        }
+                    },
+                    array_filters=[ { 's2.index': 2 }, { 's3.index': 3 } ],
+                    upsert=False,
+                )
+            # 본 생산(step 6) 최종 완료 처리
+            if phase == 'main' and (target_idx == max_idx or (next_idx is None) or (next_idx and next_idx > max_idx)):
+                # 제품/공장/수량 정보 준비
+                product_name2 = ''
+                try:
+                    pid = doc.get('product_id')
+                    if pid is not None:
+                        try:
+                            pid_int = int(str(pid))
+                            p = Product.objects.filter(id=pid_int).only('name').first()
+                            if p and getattr(p, 'name', None):
+                                product_name2 = p.name
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                product_quantity2 = doc.get('quantity') or 0
+                factory_name2 = doc.get('factory_name') or ''
+                factory_contact2 = doc.get('factory_contact') or ''
+                # 본 생산 단계에서는 stage에 운송장 코드 필드가 없으므로 빈 값으로 세팅
+                delivery_code2 = ''
+
+                # steps[6] done + steps[7] 정보 채우고 done + current_step_index=7
+                col.update_one(
+                    { '$or': [
+                        ({ 'order_id': order_id_str } if order_id_str else {}),
+                        ({ 'order_id': order_id_int } if order_id_int is not None else {}),
+                    ] },
+                    {
+                        '$set': {
+                            'steps.$[s6].status': 'done',
+                            'steps.$[s7].status': 'done',
+                            'steps.$[s7].product_name': product_name2,
+                            'steps.$[s7].product_quantity': product_quantity2,
+                            'steps.$[s7].factory_name': factory_name2,
+                            'steps.$[s7].factory_contact': factory_contact2,
+                            'steps.$[s7].delivery_code': delivery_code2,
+                            'last_updated': now_iso_with_minutes(),
+                            'current_step_index': 7,
+                        }
+                    },
+                    array_filters=[ { 's6.index': 6 }, { 's7.index': 7 } ],
+                    upsert=False,
+                )
+        except Exception:
+            logger.exception('advance_order_stage: failed to finalize sample production and shipping statuses')
+
         return Response({'detail': '단계가 업데이트되었습니다.', 'done_stage_index': target_idx, 'next_stage_index': next_idx}, status=status.HTTP_200_OK)
     except Exception:
         logger.exception('advance_order_stage error')
