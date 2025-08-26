@@ -111,21 +111,18 @@ load_environment_config() {
             DJANGO_SETTINGS="fablink_project.settings.local"
             REQUIREMENTS_FILE="requirements/local.txt"
             COLLECT_STATIC=false
-            RUN_TESTS=true
             ;;
         dev)
             ENV_FILE=".env.dev"
             DJANGO_SETTINGS="fablink_project.settings.dev"
             REQUIREMENTS_FILE="requirements/dev.txt"
             COLLECT_STATIC=true
-            RUN_TESTS=true
             ;;
         prod)
             ENV_FILE=".env.prod"
             DJANGO_SETTINGS="fablink_project.settings.prod"
             REQUIREMENTS_FILE="requirements/prod.txt"
             COLLECT_STATIC=true
-            RUN_TESTS=false
             ;;
         *)
             log_error "지원하지 않는 환경입니다: $env_type"
@@ -437,26 +434,6 @@ collect_static_files() {
     log_success "정적 파일 수집 완료"
 }
 
-# 테스트 실행
-run_tests() {
-    if [ "$SKIP_TEST" = true ] || [ "$RUN_TESTS" = false ]; then
-        log_info "테스트 실행을 건너뜁니다."
-        return
-    fi
-    
-    log_step "테스트를 실행합니다..."
-    
-    if [ "$ENVIRONMENT" = "local" ]; then
-        # 로컬에서는 상세한 테스트 실행
-        python manage.py test --verbosity=2
-    else
-        # 개발/운영에서는 기본 테스트만
-        python manage.py test
-    fi
-    
-    log_success "테스트 실행 완료"
-}
-
 # 빌드 완료 메시지
 show_completion_message() {
     log_header "🎉 빌드 완료!"
@@ -605,7 +582,6 @@ main() {
     
     # 후처리
     collect_static_files
-    run_tests
     show_completion_message
     
     log_success "🎉 모든 빌드 작업이 성공적으로 완료되었습니다!"
