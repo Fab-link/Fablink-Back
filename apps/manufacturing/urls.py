@@ -1,8 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    ProductViewSet, OrderViewSet, submit_manufacturing, get_factory_orders, 
-    get_designer_orders, create_factory_bid, get_bids_by_order, select_bid
+    ProductViewSet, OrderViewSet, submit_manufacturing,
+    create_factory_bid, get_bids_by_order, select_bid,
+    get_orders_mongo, get_order_mongo, update_order_progress_mongo,
+    has_factory_bid, get_factory_quotes,
 )
 
 router = DefaultRouter()
@@ -12,9 +14,18 @@ router.register(r'orders', OrderViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('submit/', submit_manufacturing, name='manufacturing-submit'),
-    path('factory-orders/', get_factory_orders, name='factory-orders'),
-    path('designer-orders/', get_designer_orders, name='designer-orders'),
+    # Unified orders (Mongo) list & detail/progress (신규 비충돌 경로)
+    path('orders-mongo/', get_orders_mongo, name='orders-mongo-list'),
+    path('orders-mongo/<str:order_id>/', get_order_mongo, name='orders-mongo-detail'),
+    path('orders-mongo/<str:order_id>/progress/', update_order_progress_mongo, name='orders-mongo-progress'),
+    # (구) 충돌 경로 - 점진적 마이그레이션 위해 일시 유지. 프론트 교체 후 제거 예정.
+    path('orders/', get_orders_mongo, name='orders-mongo-legacy'),
+    path('orders/<str:order_id>/', get_order_mongo, name='order-mongo-detail-legacy'),
+    path('orders/<str:order_id>/progress/', update_order_progress_mongo, name='order-mongo-progress-legacy'),
     path('bids/', create_factory_bid, name='create-factory-bid'),
     path('bids/by_order/', get_bids_by_order, name='get-bids-by-order'),
+    path('bids/has_bid/', has_factory_bid, name='has-factory-bid'),
     path('bids/<int:bid_id>/select/', select_bid, name='select-bid'),
+    # RequestOrder 기반 공장 견적 요청 목록
+    path('factory/quotes/', get_factory_quotes, name='factory-quotes'),
 ]

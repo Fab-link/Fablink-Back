@@ -1,82 +1,84 @@
 from django.contrib import admin
+from django.db import models
 from .models import Product, Order, RequestOrder, BidFactory
+
+
+def _all_field_names(model: type[models.Model]):
+    names = []
+    for f in model._meta.get_fields():
+        if getattr(f, "auto_created", False) and not getattr(f, "concrete", False):
+            continue
+        if getattr(f, "concrete", False) and not getattr(f, "many_to_many", False):
+            names.append(f.name)
+        elif getattr(f, "many_to_many", False) and not getattr(f, "auto_created", False):
+            names.append(f.name)
+    return names
+
+
+def _search_fields(model: type[models.Model]):
+    fields = []
+    for f in model._meta.get_fields():
+        if not getattr(f, "concrete", False):
+            continue
+        if isinstance(
+            f,
+            (models.CharField, models.TextField, models.EmailField, models.SlugField, models.UUIDField),
+        ):
+            fields.append(f"{f.name}__icontains")
+    return fields
+
+
+def _list_filters(model: type[models.Model]):
+    filters = []
+    for f in model._meta.get_fields():
+        if getattr(f, "auto_created", False) and not getattr(f, "concrete", False):
+            continue
+        if isinstance(f, models.BooleanField) or getattr(f, "choices", None):
+            filters.append(f.name)
+        elif isinstance(f, (models.DateField, models.DateTimeField)):
+            filters.append(f.name)
+        elif isinstance(f, (models.ForeignKey, models.OneToOneField, models.ManyToManyField)) and not getattr(
+            f, "auto_created", False
+        ):
+            filters.append(f.name)
+    return filters
+
+
+def _list_display_fields(model: type[models.Model]):
+    names = []
+    for f in model._meta.get_fields():
+        if getattr(f, "auto_created", False) and not getattr(f, "concrete", False):
+            continue
+        # Exclude ManyToMany from list_display to satisfy admin constraints
+        if getattr(f, "many_to_many", False):
+            continue
+        if getattr(f, "concrete", False):
+            names.append(f.name)
+    return names
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'designer', 'season', 'target', 'created_at')
-    list_filter = ('season', 'target', 'created_at')
-    # Designer 모델은 User FK가 없으므로 designer의 name/user_id로 직접 검색
-    search_fields = ('name', 'designer__name', 'designer__user_id')
-    readonly_fields = ('created_at', 'updated_at')
-    
-    fieldsets = (
-        ('기본 정보', {
-            'fields': ('name', 'designer', 'season', 'target', 'concept')
-        }),
-        ('상세 정보', {
-            'fields': ('detail', 'image_path', 'size', 'quantity')
-        }),
-        ('소재 정보', {
-            'fields': ('fabric', 'material')
-        }),
-        ('일정 및 메모', {
-            'fields': ('due_date', 'memo', 'work_sheet_path')
-        }),
-        ('시스템 정보', {
-            'fields': ('created_at', 'updated_at')
-        }),
-    )
+    list_display = tuple(_list_display_fields(Product))
+    list_filter = tuple(_list_filters(Product))
+    search_fields = tuple(_search_fields(Product))
+    # 모든 필드 수정 가능 요구에 따라 readonly_fields 미사용
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('order_id', 'product', 'get_designer_name')
-    search_fields = ('order_id', 'product__name', 'product__designer__name')
-    
-    def get_designer_name(self, obj):
-        # Designer 모델은 User FK가 없으므로 직접 name 접근
-        return obj.product.designer.name
-    get_designer_name.short_description = '디자이너'
+    list_display = tuple(_list_display_fields(Order))
+    list_filter = tuple(_list_filters(Order))
+    search_fields = tuple(_search_fields(Order))
 
 
 @admin.register(RequestOrder)
 class RequestOrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'order', 'designer_name', 'product_name', 'quantity', 'due_date')
-    list_filter = ('due_date', 'designer_name')
-    search_fields = ('designer_name', 'product_name', 'order__order_id')
-    
-    fieldsets = (
-        ('기본 정보', {
-            'fields': ('order', 'designer_name', 'product_name')
-        }),
-        ('주문 세부', {
-            'fields': ('quantity', 'due_date', 'work_sheet_path')
-        }),
-    )
+    list_display = tuple(_list_display_fields(RequestOrder))
+    list_filter = tuple(_list_filters(RequestOrder))
+    search_fields = tuple(_search_fields(RequestOrder))
 
 
 @admin.register(BidFactory)
 class BidFactoryAdmin(admin.ModelAdmin):
-    list_display = ('id', 'get_factory_name', 'get_request_order_info', 'work_price', 
-                   'expect_work_day', 'settlement_status', 'is_matched', 'matched_date')
-    list_filter = ('settlement_status', 'is_matched', 'expect_work_day')
-    search_fields = ('factory__name', 'request_order__product_name', 'request_order__designer_name')
-    
-    def get_factory_name(self, obj):
-        return obj.factory.name
-    get_factory_name.short_description = '공장명'
-    
-    def get_request_order_info(self, obj):
-        return f"{obj.request_order.product_name} ({obj.request_order.designer_name})"
-    get_request_order_info.short_description = '주문 정보'
-    
-    fieldsets = (
-        ('기본 정보', {
-            'fields': ('factory', 'request_order')
-        }),
-        ('입찰 세부', {
-            'fields': ('work_price', 'expect_work_day', 'settlement_status')
-        }),
-        ('낙찰 정보', {
-            'fields': ('is_matched', 'matched_date')
-        }),
-    )
+    list_display = tuple(_list_display_fields(BidFactory))
+    list_filter = tuple(_list_filters(BidFactory))
+    search_fields = tuple(_search_fields(BidFactory))

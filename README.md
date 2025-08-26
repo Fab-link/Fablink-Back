@@ -41,14 +41,6 @@ source venv/bin/activate  # Linux/Mac
 # venv\Scripts\activate   # Windows
 ```
 
-### 스크립트 실행 안될시
-```bash
-1. 스크립트 디렉토리로 이동후 모든 스크립트 들의 줄 끝의 r 문자 제거 및 권한 부여
-cd /scripts
-for file in *.sh; do sed -i 's/\r$//' "$file"; chmod +x "$file"; done
-2.fix_scripts 실행
-```
-
 ### 환경별 초기 설정
 
 #### 로컬 환경 설정 (파일 기반)
@@ -411,3 +403,4 @@ Fablink-Back/
 ```
 
 자세한 인프라 정보는 [kubernetes/README.md](./kubernetes/README.md)를 참조하세요.
+
