@@ -7,21 +7,6 @@ from django.db import connection
 from django.core.cache import cache
 import time
 
-def admin_redirect_view(request):
-    """
-    API Gateway 호환 Admin 리다이렉션 뷰
-    무한 루프를 방지하기 위해 커스텀 처리
-    """
-    from django.shortcuts import redirect
-    from django.contrib.auth import authenticate
-    
-    # 이미 로그인된 경우 admin 메인으로
-    if request.user.is_authenticated and request.user.is_staff:
-        return redirect('admin:index')
-    
-    # 로그인이 필요한 경우 로그인 페이지로
-    return redirect('admin:login')
-
 def api_root(request):
     """API 루트 엔드포인트"""
     return JsonResponse({
@@ -81,21 +66,16 @@ def readiness_check(request):
 urlpatterns = [
     path('', api_root, name='api-root'),
     
-    # Health check endpoints - API Gateway 호환
-    path('health/', health_check, name='health-check-with-slash'),
-    path('health', health_check, name='health-check-without-slash'),
-    path('ready/', readiness_check, name='readiness-check-with-slash'),
-    path('ready', readiness_check, name='readiness-check-without-slash'),
+    # Health check endpoints
+    path('health/', health_check, name='health-check'),
+    path('ready/', readiness_check, name='readiness-check'),
     
-    # Admin - API Gateway 호환 (커스텀 리다이렉션으로 무한루프 방지)
+    # Admin
     path('admin/', admin.site.urls),
-    path('admin', admin_redirect_view, name='admin-redirect'),
     
-    # API 엔드포인트들 - API Gateway 호환 (trailing slash 있는/없는 버전 모두 지원)
+    # API 엔드포인트들 - API Gateway에서 trailing slash 처리됨
     path('api/accounts/', include('apps.accounts.urls')),
-    path('api/accounts', include('apps.accounts.urls')),
     path('api/manufacturing/', include('apps.manufacturing.urls')),
-    path('api/manufacturing', include('apps.manufacturing.urls')),
     
     # 향후 추가될 API들도 동일한 패턴 적용
     # path('api/orders/', include('apps.orders.urls')),
