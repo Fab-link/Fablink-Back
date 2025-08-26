@@ -20,8 +20,21 @@ if DEBUG:
 
 # ALLOWED_HOSTS 환경변수에서 로드 (쉼표로 구분)
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# URL 설정
+APPEND_SLASH = True
+PREPEND_WWW = False
+# API Gateway 프록시 호환성 설정
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# Application definition
+# Force script name to None to prevent issues with proxy
+FORCE_SCRIPT_NAME = None
+
+# Admin 페이지 설정
+LOGIN_URL = 'admin/login/'
+LOGIN_REDIRECT_URL = 'admin/'
+LOGOUT_REDIRECT_URL = 'admin/'# Application definition
 DJANGO_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -296,3 +309,13 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = 'accounts.User'
+
+# API Gateway 프록시 설정
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# 신뢰할 수 있는 프록시 (API Gateway, NLB)
+ALLOWED_HOSTS = [
+    '*',  # 개발환경에서는 모든 호스트 허용
+]

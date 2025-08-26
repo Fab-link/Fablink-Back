@@ -65,15 +65,25 @@ def readiness_check(request):
 
 urlpatterns = [
     path('', api_root, name='api-root'),
+    
+    # Health check endpoints
     path('health/', health_check, name='health-check'),
     path('ready/', readiness_check, name='readiness-check'),
+    
+    # Admin
     path('admin/', admin.site.urls),
-    # API 엔드포인트들
+    
+    # API 엔드포인트들 - API Gateway에서 trailing slash 처리됨
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/manufacturing/', include('apps.manufacturing.urls')),
+    
+    # 향후 추가될 API들도 동일한 패턴 적용
     # path('api/orders/', include('apps.orders.urls')),
+    # path('api/orders', include('apps.orders.urls')),
     # path('api/notifications/', include('apps.notifications.urls')),
+    # path('api/notifications', include('apps.notifications.urls')),
     # path('api/files/', include('apps.files.urls')),
+    # path('api/files', include('apps.files.urls')),
 ]
 
 # Debug Toolbar URLs (로컬 환경에서만)

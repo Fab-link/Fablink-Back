@@ -7,24 +7,35 @@ data:
   DEBUG: "True"
   
   # ALLOWED_HOSTS (API Gateway, NLB, 내부 서비스, Kubernetes 내부 IP, Pod IP 대역)
-  ALLOWED_HOSTS: "dev-api.fablink.com,8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com,fablink-dev-nlb-25ff572334e995e4.elb.ap-northeast-2.amazonaws.com,fablink-backend-service,fablink-backend-service.fablink-dev.svc.cluster.local,10.0.0.0/8,172.20.0.0/16,localhost,127.0.0.1,*"
+  ALLOWED_HOSTS: "dev-api.fablink.com,fablink-api-dev.com,8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com,fablink-dev-nlb-25ff572334e995e4.elb.ap-northeast-2.amazonaws.com,fablink-backend-service,fablink-backend-service.fablink-dev.svc.cluster.local,10.0.0.0/8,172.20.0.0/16,localhost,127.0.0.1,*"
   
   # CORS 설정 (프론트엔드 도메인)
   CORS_ALLOWED_ORIGINS: "https://fab-link-dev.org,http://localhost:3000"
   
-  # Aurora DB 설정 (개발환경)
-  DB_HOST: "fablink-aurora-cluster.cluster-cr2c0e2q6qeb.ap-northeast-2.rds.amazonaws.com"
-  DB_NAME: "fablink"
-  DB_USER: "fablinkadmin"
+  # Aurora DB 설정 (개발환경) - 실제 Aurora 설정과 일치
+  DB_HOST: "fablink-dev-aurora-cluster.cluster-cr2c0e2q6qeb.ap-northeast-2.rds.amazonaws.com"
+  DB_NAME: "fablinkdev"
+  DB_USER: "fablinkadmin_dev"
+  DB_PORT: "5432"
+  DB_ENGINE: "django.db.backends.postgresql"
   
   # DynamoDB 설정 (개발환경)
   DYNAMODB_TABLE_PREFIX: "fablink_dev"
+  DYNAMODB_REGION: "ap-northeast-2"
   DYNAMODB_ACCESS_KEY_ID: ""  # IRSA 사용으로 불필요하지만 설정 호환성
   DYNAMODB_SECRET_ACCESS_KEY: ""  # IRSA 사용으로 불필요하지만 설정 호환성
+  USE_DYNAMODB: "True"
   
   # S3 설정 (개발환경)
   AWS_STORAGE_BUCKET_NAME: "fablink-dev-uploads"
+  AWS_S3_REGION_NAME: "ap-northeast-2"
+  USE_S3: "True"
   
   # API Gateway 설정
   API_GATEWAY_ENDPOINT: "https://8wwdg03sr6.execute-api.ap-northeast-2.amazonaws.com"
   FRONTEND_URL: "https://fab-link-dev.org"
+  
+  # 기타 Django 설정
+  LANGUAGE_CODE: "ko-kr"
+  TIME_ZONE: "Asia/Seoul"
+  USE_TZ: "True"

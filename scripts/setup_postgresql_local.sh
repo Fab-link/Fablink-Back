@@ -87,8 +87,8 @@ $PSQL_CMD -c "ALTER ROLE fablink_user SET client_encoding TO 'utf8';"
 $PSQL_CMD -c "ALTER ROLE fablink_user SET default_transaction_isolation TO 'read committed';"
 $PSQL_CMD -c "ALTER ROLE fablink_user SET timezone TO 'Asia/Seoul';"
 
-# 로컬 개발환경 데이터베이스 생성 (로케일 변수 직접 사용)
-$PSQL_CMD -c "CREATE DATABASE fablink_local_db WITH OWNER fablink_user ENCODING 'UTF8' LC_COLLATE='${LOCALE_COLLATE}' LC_CTYPE='${LOCALE_CTYPE}';"
+# 로컬 개발환경 데이터베이스 생성 (template0 사용하여 collation 문제 해결)
+$PSQL_CMD -c "CREATE DATABASE fablink_local_db WITH OWNER fablink_user TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE='${LOCALE_COLLATE}' LC_CTYPE='${LOCALE_CTYPE}';"
 
 # 권한 부여
 $PSQL_CMD -c "GRANT ALL PRIVILEGES ON DATABASE fablink_local_db TO fablink_user;"
