@@ -18,6 +18,32 @@ from .serializers import (
 from .models import User
 
 
+# ==================== 루트 ====================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def accounts_root_view(request):
+    """
+    Accounts API 루트 엔드포인트
+    GET /api/accounts/
+    
+    사용 가능한 엔드포인트 목록을 반환합니다.
+    """
+    return Response({
+        'message': 'Accounts API',
+        'version': '1.0.0',
+        'endpoints': {
+            'designer_login': '/api/accounts/designer/login/',
+            'factory_login': '/api/accounts/factory/login/',
+            'logout': '/api/accounts/logout/',
+            'token_refresh': '/api/accounts/token/refresh/',
+            'profile': '/api/accounts/profile/',
+            'user_info': '/api/accounts/user_info/',
+        },
+        'description': 'FabLink 사용자 계정 관리 API'
+    })
+
+
 # ==================== 로그아웃 ====================
 
 @api_view(['POST'])
