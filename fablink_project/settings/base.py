@@ -143,11 +143,33 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# MongoDB settings (env override)
-# 기본 포트를 9000으로 설정하여 스크립트/.env.example와 일관성 유지
-MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:9000')
-MONGODB_DB = os.getenv('MONGODB_DB', 'fablink')
-MONGODB_COLLECTIONS = {
+# NoSQL Database settings (MongoDB vs DynamoDB based on environment)
+DJANGO_ENV = os.getenv('DJANGO_ENV', 'local')
+
+if DJANGO_ENV == 'local':
+    # Local environment: Use MongoDB
+    USE_DYNAMODB = False
+    USE_MONGODB = True
+    
+    # MongoDB settings (env override)
+    # 기본 포트를 9000으로 설정하여 스크립트/.env.example와 일관성 유지
+    MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:9000')
+    MONGODB_DB = os.getenv('MONGODB_DB', 'fablink')
+    
+    print("🍃 LOCAL 환경: MongoDB 사용")
+else:
+    # Dev/Prod environment: Use DynamoDB
+    USE_DYNAMODB = True
+    USE_MONGODB = False
+    
+    # DynamoDB settings
+    DYNAMODB_TABLE_NAME = f'fablink-dynamodb-{DJANGO_ENV}'
+    DYNAMODB_REGION = 'ap-northeast-2'
+    
+    print(f"🔥 {DJANGO_ENV.upper()} 환경: DynamoDB 사용")
+
+# Collection/Table mappings (unified interface)
+NOSQL_COLLECTIONS = {
     'orders': os.getenv('MONGODB_COLLECTION_ORDERS', 'orders'),
     # legacy collections removed (designer_orders, factory_orders)
 }

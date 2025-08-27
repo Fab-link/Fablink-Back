@@ -14,7 +14,7 @@ from .serializers import (
     ProductSerializer, ProductCreateSerializer, OrderSerializer, OrderCreateSerializer,
     RequestOrderSerializer, BidFactorySerializer, BidFactoryCreateSerializer
 )
-from apps.core.services.mongo import get_collection, now_iso_with_minutes, ensure_indexes
+from apps.core.services.nosql import get_collection, now_iso_with_minutes, ensure_indexes
 from apps.core.services.factory_steps_template import build_factory_steps_template
 from apps.core.services.orders_steps_template import build_orders_steps_template  # 추가: 주문 steps 템플릿
 from apps.accounts.models import Designer
@@ -234,13 +234,13 @@ def submit_manufacturing(request):
 
         # Fallback: ensure Mongo unified orders document exists (signals may have failed if import disabled)
         try:
-            from apps.core.services.mongo import get_collection, now_iso_with_minutes, ensure_indexes
+            from apps.core.services.nosql import get_collection, now_iso_with_minutes, ensure_indexes
             from apps.core.services.orders_steps_template import build_orders_steps_template
             try:
                 ensure_indexes()
             except Exception:
                 pass
-            col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+            col = get_collection(settings.NOSQL_COLLECTIONS['orders'])
             order_id_str = str(order.order_id)
             if not col.find_one({'order_id': order_id_str}):
                 col.update_one(
@@ -297,11 +297,11 @@ def get_orders_mongo(request):
         except ValueError:
             return Response({'detail': 'page/page_size는 정수여야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
         page = max(1, page)
-        page_size = max(1, min(100, page_size))
+        page_size = max(1, min(20, page_size))
         status_filter = request.GET.get('status')
         debug_mode = str(request.GET.get('debug', '')).lower() in ('1','true','yes')
 
-        col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+        col = get_collection(settings.NOSQL_COLLECTIONS['orders'])
 
         base_query: dict = {}
         if status_filter:
@@ -711,7 +711,7 @@ def create_factory_bid(request):
                 }
 
                 # unified orders collection
-                col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+                col = get_collection(settings.NOSQL_COLLECTIONS['orders'])
 
                 # 1) 동일 factory_id 항목 제거(중복 방지)
                 res_pull = col.update_one(
@@ -883,7 +883,7 @@ def select_bid(request, bid_id):
         # orders: step 1(업체 선정) 완료 처리 + current_step_index -> 2 (조건부, 이미 2 이상이면 skip)
         try:
             order_id_str = str(bid.request_order.order.order_id)
-            col_orders = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+            col_orders = get_collection(settings.NOSQL_COLLECTIONS['orders'])
             now_ts = now_iso_with_minutes()
             expect_date = getattr(bid, 'expect_work_day', None)
             if hasattr(expect_date, 'isoformat'):
@@ -941,7 +941,7 @@ def select_bid(request, bid_id):
 def get_order_mongo(request, order_id: str):
     """단일 주문 Mongo 문서 반환 (unified orders)."""
     try:
-        col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+        col = get_collection(settings.NOSQL_COLLECTIONS['orders'])
         doc = col.find_one({'order_id': str(order_id)})
         if not doc:
             return Response({'detail': '주문 문서를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
@@ -987,7 +987,7 @@ def update_order_progress_mongo(request, order_id: str):
         - 마지막 단계 완료 시 overall_status='completed'
     """
     try:
-        col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+        col = get_collection(settings.NOSQL_COLLECTIONS['orders'])
         doc = col.find_one({'order_id': str(order_id)})
         if not doc:
             return Response({'detail': '주문 문서를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)

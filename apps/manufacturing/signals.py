@@ -5,7 +5,8 @@ from django.utils import timezone
 import logging
 
 from apps.manufacturing.models import Order
-from apps.core.services.mongo import get_collection, ensure_indexes, now_iso_with_minutes
+# 통합 NoSQL 서비스 사용 (환경별 자동 분기: local=MongoDB, dev/prod=DynamoDB)
+from apps.core.services.nosql import get_collection, now_iso_with_minutes
 from apps.core.services.orders_steps_template import build_orders_steps_template
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ def create_or_update_unified_order(sender, instance: Order, created: bool, **kwa
     product_id_str = str(product_id) if product_id is not None else None
 
     # Upsert into collection
-    col = get_collection(settings.MONGODB_COLLECTIONS['orders'])
+    col = get_collection('orders')
 
     # ----- Initial meta field derivation (schema alignment) -----
     # Product meta
