@@ -36,9 +36,7 @@ def accounts_root_view(request):
             'designer_login': '/api/accounts/designer/login/',
             'factory_login': '/api/accounts/factory/login/',
             'logout': '/api/accounts/logout/',
-            'token_refresh': '/api/accounts/token/refresh/',
-            'profile': '/api/accounts/profile/',
-            'user_info': '/api/accounts/user_info/',
+            'token_refresh': '/api/accounts/token/refresh/'
         },
         'description': 'FabLink 사용자 계정 관리 API'
     })
@@ -99,30 +97,6 @@ def token_refresh_view(request):
 
 # ==================== 디자이너 관련 ====================
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def user_profile_view(request):
-    """
-    사용자 프로필 조회 API
-    GET /api/accounts/profile/
-    """
-    try:
-        user = request.user
-        user_serializer = UserSerializer(user, context={'request': request})
-        
-        response_data = {
-            'success': True,
-            'user': user_serializer.data,
-            'user_type': None
-        }
-        
-        return Response(response_data, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        return Response({
-            'success': False,
-            'message': f'사용자 정보 조회 실패: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== 디자이너 로그인 ====================
