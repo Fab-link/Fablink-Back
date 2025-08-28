@@ -655,17 +655,22 @@ def create_factory_bid(request):
         data = request.data.copy()
         data['factory'] = request.user.factory.id
         
-        # RequestOrder ID를 통해 RequestOrder 객체 가져오기
-        request_order_id = data.get('order')  # 프론트에서 order로 전송
-        if not request_order_id:
+        # order 필드 처리: order_id 또는 request_order_id 모두 지원
+        order_value = data.get('order')  # order_id 또는 request_order_id
+        if not order_value:
             return Response({'detail': 'order 필드가 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            request_order = RequestOrder.objects.get(id=request_order_id)
+            request_order = RequestOrder.objects.get(id=order_value)
             data['request_order'] = request_order.id
         except RequestOrder.DoesNotExist:
-            return Response({'detail': '해당 주문을 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
-        
+            try:
+                # RequestOrder.id로 찾을 수 없으면 Order.order_id로 시도
+                order = Order.objects.get(order_id=order_value)
+                request_order = RequestOrder.objects.get(order=order)
+                data['request_order'] = request_order.id
+            except (Order.DoesNotExist, RequestOrder.DoesNotExist):
+                return Response({'detail': '해당 주문을 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)        
         # 예상 납기일 계산 (단가와 예상 작업일수로부터)
         estimated_delivery_days = data.get('estimated_delivery_days', 7)
         from datetime import datetime, timedelta
