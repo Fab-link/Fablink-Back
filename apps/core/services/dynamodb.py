@@ -122,13 +122,8 @@ class DynamoDBService:
     def query_documents(self, filters: Dict[str, Any] = None, limit: int = None) -> List[Dict[str, Any]]:
         """Query documents with filters."""
         try:
+            # Get all documents first (DynamoDB scan)
             scan_kwargs = {}
-            
-            if filters:
-                filter_expression = self._build_filter_expression(filters)
-                if filter_expression:
-                    scan_kwargs.update(filter_expression)
-            
             if limit:
                 scan_kwargs['Limit'] = limit
             
@@ -136,12 +131,89 @@ class DynamoDBService:
             items = response.get('Items', [])
             
             result = [dict(item) for item in items]
+            
+            # Apply filters in memory for complex queries
+            if filters:
+                result = self._apply_memory_filters(result, filters)
+            
             logger.info(f"Queried {len(result)} documents")
             return result
             
         except Exception as e:
             logger.error(f"Error querying documents: {e}")
             return []
+    
+    def _apply_memory_filters(self, documents: List[Dict[str, Any]], filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Apply filters in memory for complex MongoDB-style queries."""
+        filtered = []
+        
+        for doc in documents:
+            if self._document_matches_filter(doc, filters):
+                filtered.append(doc)
+        
+        return filtered
+    
+    def _document_matches_filter(self, doc: Dict[str, Any], filters: Dict[str, Any]) -> bool:
+        """Check if document matches filter conditions."""
+        if '$or' in filters:
+            or_conditions = filters['$or']
+            other_filters = {k: v for k, v in filters.items() if k != '$or'}
+            
+            # Check OR conditions
+            or_match = False
+            for condition in or_conditions:
+                if self._document_matches_filter(doc, condition):
+                    or_match = True
+                    break
+            
+            if not or_match:
+                return False
+            
+            # Check other conditions
+            return self._document_matches_filter(doc, other_filters)
+        
+        # Check regular conditions
+        for key, value in filters.items():
+            if key.startswith('$'):
+                continue
+            
+            if not self._field_matches_value(doc, key, value):
+                return False
+        
+        return True
+    
+    def _field_matches_value(self, doc: Dict[str, Any], field_path: str, expected_value: Any) -> bool:
+        """Check if nested field matches expected value."""
+        if '.' not in field_path:
+            return doc.get(field_path) == expected_value
+        
+        # Handle nested field like "steps.factory_list.factory_id"
+        parts = field_path.split('.')
+        current = doc
+        
+        for i, part in enumerate(parts[:-1]):
+            if part not in current:
+                return False
+            current = current[part]
+            
+            # If we hit an array, check if any item matches the remaining path
+            if isinstance(current, list):
+                remaining_path = '.'.join(parts[i+1:])
+                for item in current:
+                    if isinstance(item, dict) and self._field_matches_value(item, remaining_path, expected_value):
+                        return True
+                return False
+        
+        # Check final field
+        final_field = parts[-1]
+        if isinstance(current, list):
+            # Check if any item in array has the field with expected value
+            for item in current:
+                if isinstance(item, dict) and item.get(final_field) == expected_value:
+                    return True
+            return False
+        else:
+            return current.get(final_field) == expected_value
     
     def _build_filter_expression(self, filters: Dict[str, Any]) -> Dict[str, Any]:
         """Build DynamoDB filter expression from MongoDB-style filters."""
@@ -158,16 +230,28 @@ class DynamoDBService:
         for key, value in filters.items():
             if key.startswith('$'):
                 continue
+            
+            # Handle nested field queries like "steps.factory_list.factory_id"
+            if '.' in key:
+                attr_name = f"#{key.replace('.', '_')}"
+                attr_value = f":{key.replace('.', '_')}"
                 
-            attr_name = f"#{key.replace('.', '_')}"
-            attr_value = f":{key.replace('.', '_')}"
-            
-            expression_attribute_names[attr_name] = key
-            expression_attribute_values[attr_value] = value
-            
-            if filter_expression:
-                filter_expression += " AND "
-            filter_expression += f"{attr_name} = {attr_value}"
+                expression_attribute_names[attr_name] = key
+                expression_attribute_values[attr_value] = value
+                
+                if filter_expression:
+                    filter_expression += " AND "
+                filter_expression += f"contains({attr_name}, {attr_value})"
+            else:
+                attr_name = f"#{key}"
+                attr_value = f":{key}"
+                
+                expression_attribute_names[attr_name] = key
+                expression_attribute_values[attr_value] = value
+                
+                if filter_expression:
+                    filter_expression += " AND "
+                filter_expression += f"{attr_name} = {attr_value}"
         
         result = {}
         if filter_expression:
@@ -188,6 +272,7 @@ class DynamoDBService:
         expression_attribute_names = {}
         expression_attribute_values = {}
         
+        # Handle OR conditions
         or_parts = []
         for i, condition in enumerate(or_conditions):
             for key, value in condition.items():
@@ -196,18 +281,31 @@ class DynamoDBService:
                 
                 expression_attribute_names[attr_name] = key
                 expression_attribute_values[attr_value] = value
-                or_parts.append(f"{attr_name} = {attr_value}")
+                
+                # Handle nested field queries in OR conditions
+                if '.' in key:
+                    or_parts.append(f"contains({attr_name}, {attr_value})")
+                else:
+                    or_parts.append(f"{attr_name} = {attr_value}")
         
         if or_parts:
             filter_parts.append(f"({' OR '.join(or_parts)})")
         
+        # Handle other conditions
         for key, value in other_filters.items():
+            if key.startswith('$'):
+                continue
+                
             attr_name = f"#{key.replace('.', '_')}"
             attr_value = f":{key.replace('.', '_')}"
             
             expression_attribute_names[attr_name] = key
             expression_attribute_values[attr_value] = value
-            filter_parts.append(f"{attr_name} = {attr_value}")
+            
+            if '.' in key:
+                filter_parts.append(f"contains({attr_name}, {attr_value})")
+            else:
+                filter_parts.append(f"{attr_name} = {attr_value}")
         
         result = {}
         if filter_parts:
@@ -222,7 +320,7 @@ class DynamoDBService:
 # Global service instance
 _dynamodb_service = None
 
-def get_dynamodb_service() -> DynamoDBService:
+def get_dynamodb_service():
     """Get or create DynamoDB service instance."""
     global _dynamodb_service
     if _dynamodb_service is None:
@@ -286,28 +384,35 @@ def get_collection(collection_name: str):
             self.service = service
             self.collection_name = collection_name
         
-        def find_one(self, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        def find_one(self, query: Dict[str, Any], projection: Dict[str, int] = None) -> Optional[Dict[str, Any]]:
+            """MongoDB compatible find_one with projection support."""
             if 'order_id' in query:
                 doc_id = query['order_id']
-                return self.service.get_document(doc_id)
+                doc = self.service.get_document(doc_id)
             elif 'id' in query:
-                return self.service.get_document(query['id'])
+                doc = self.service.get_document(query['id'])
             else:
                 results = self.service.query_documents(filters=query, limit=1)
-                return results[0] if results else None
+                doc = results[0] if results else None
+            
+            if doc and projection:
+                doc = self._apply_projection(doc, projection)
+            
+            return doc
         
         def find(self, query: Dict[str, Any] = None, projection: Dict[str, int] = None):
+            """MongoDB compatible find with projection support."""
             results = self.service.query_documents(filters=query or {})
             
             if projection:
-                filtered_results = []
-                for doc in results:
-                    if projection.get('_id') == 0:
-                        doc = {k: v for k, v in doc.items() if k != '_id'}
-                    filtered_results.append(doc)
-                results = filtered_results
+                results = [self._apply_projection(doc, projection) for doc in results]
                 
             return DynamoDBCursor(results, projection)
+        
+        def count_documents(self, query: Dict[str, Any] = None) -> int:
+            """MongoDB compatible count_documents method."""
+            results = self.service.query_documents(filters=query or {})
+            return len(results)
         
         def update_one(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False, array_filters: List[Dict] = None):
             """Complete MongoDB update_one compatibility."""
@@ -352,7 +457,25 @@ def get_collection(collection_name: str):
             
             return UpdateResult(1, 0)
         
+        def _apply_projection(self, doc: Dict[str, Any], projection: Dict[str, int]) -> Dict[str, Any]:
+            """Apply MongoDB-style projection to document."""
+            if not projection:
+                return doc
+            
+            result = copy.deepcopy(doc)
+            
+            if projection.get('_id') == 0:
+                result = {k: v for k, v in result.items() if k != '_id'}
+            
+            # Include only specified fields (if any positive projections)
+            include_fields = {k for k, v in projection.items() if v == 1}
+            if include_fields:
+                result = {k: v for k, v in result.items() if k in include_fields}
+            
+            return result
+        
         def _apply_set_operation(self, doc: Dict[str, Any], set_data: Dict[str, Any]) -> bool:
+            """Apply $set operation to document."""
             modified = False
             for key, value in set_data.items():
                 if self._set_nested_value(doc, key, value):
@@ -360,6 +483,7 @@ def get_collection(collection_name: str):
             return modified
         
         def _apply_pull_operation(self, doc: Dict[str, Any], pull_data: Dict[str, Any], array_filters: List[Dict] = None) -> bool:
+            """Apply $pull operation to document."""
             modified = False
             for path, condition in pull_data.items():
                 if self._pull_from_array(doc, path, condition, array_filters):
@@ -367,6 +491,7 @@ def get_collection(collection_name: str):
             return modified
         
         def _apply_push_operation(self, doc: Dict[str, Any], push_data: Dict[str, Any], array_filters: List[Dict] = None) -> bool:
+            """Apply $push operation to document."""
             modified = False
             for path, value in push_data.items():
                 if self._push_to_array(doc, path, value, array_filters):
@@ -374,6 +499,7 @@ def get_collection(collection_name: str):
             return modified
         
         def _set_nested_value(self, doc: Dict[str, Any], path: str, value: Any) -> bool:
+            """Set nested value in document."""
             keys = path.split('.')
             current = doc
             
@@ -389,6 +515,7 @@ def get_collection(collection_name: str):
             return False
         
         def _pull_from_array(self, doc: Dict[str, Any], path: str, condition: Dict[str, Any], array_filters: List[Dict] = None) -> bool:
+            """Pull items from array based on condition."""
             if '$[' in path:
                 return self._handle_array_filter_pull(doc, path, condition, array_filters)
             
@@ -410,6 +537,7 @@ def get_collection(collection_name: str):
             return len(current[array_key]) != original_length
         
         def _push_to_array(self, doc: Dict[str, Any], path: str, value: Any, array_filters: List[Dict] = None) -> bool:
+            """Push item to array."""
             if '$[' in path:
                 return self._handle_array_filter_push(doc, path, value, array_filters)
             
@@ -431,109 +559,102 @@ def get_collection(collection_name: str):
             return True
         
         def _handle_array_filter_pull(self, doc: Dict[str, Any], path: str, condition: Dict[str, Any], array_filters: List[Dict] = None) -> bool:
+            """Handle array filter pull operations."""
+            # Parse path like "steps.$[step].factory_list"
             parts = path.split('.')
             if len(parts) < 3:
                 return False
             
-            array_field = parts[0]
-            filter_placeholder = parts[1]
-            target_field = parts[2]
+            array_field = parts[0]  # "steps"
+            filter_placeholder = parts[1]  # "$[step]"
+            target_field = parts[2]  # "factory_list"
             
             if array_field not in doc or not isinstance(doc[array_field], list):
                 return False
             
-            filter_name = filter_placeholder[2:-1]
+            # Extract filter name from placeholder
+            filter_name = filter_placeholder[2:-1]  # "step"
             filter_condition = None
             if array_filters:
                 for af in array_filters:
-                    if filter_name in str(af):
-                        filter_condition = af
+                    # Handle both formats: {'step.index': 1} and {'step': {'index': 1}}
+                    if f'{filter_name}.index' in af:
+                        filter_condition = {'index': af[f'{filter_name}.index']}
                         break
+                    elif filter_name in af:
+                        filter_condition = af[filter_name]
+                        break
+            
+            if not filter_condition:
+                return False
             
             modified = False
             for item in doc[array_field]:
-                if filter_condition and not self._matches_array_filter(item, filter_condition):
-                    continue
-                
-                if target_field in item and isinstance(item[target_field], list):
-                    original_length = len(item[target_field])
-                    item[target_field] = [x for x in item[target_field] if not self._matches_condition(x, condition)]
-                    if len(item[target_field]) != original_length:
-                        modified = True
+                if self._matches_condition(item, filter_condition):
+                    if target_field in item and isinstance(item[target_field], list):
+                        original_length = len(item[target_field])
+                        item[target_field] = [sub_item for sub_item in item[target_field] 
+                                            if not self._matches_condition(sub_item, condition)]
+                        if len(item[target_field]) != original_length:
+                            modified = True
             
             return modified
         
         def _handle_array_filter_push(self, doc: Dict[str, Any], path: str, value: Any, array_filters: List[Dict] = None) -> bool:
+            """Handle array filter push operations."""
+            # Parse path like "steps.$[step].factory_list"
             parts = path.split('.')
             if len(parts) < 3:
                 return False
             
-            array_field = parts[0]
-            filter_placeholder = parts[1]
-            target_field = parts[2]
+            array_field = parts[0]  # "steps"
+            filter_placeholder = parts[1]  # "$[step]"
+            target_field = parts[2]  # "factory_list"
             
             if array_field not in doc or not isinstance(doc[array_field], list):
                 return False
             
-            filter_name = filter_placeholder[2:-1]
+            # Extract filter name from placeholder
+            filter_name = filter_placeholder[2:-1]  # "step"
             filter_condition = None
             if array_filters:
                 for af in array_filters:
-                    if filter_name in str(af):
-                        filter_condition = af
+                    # Handle both formats: {'step.index': 1} and {'step': {'index': 1}}
+                    if f'{filter_name}.index' in af:
+                        filter_condition = {'index': af[f'{filter_name}.index']}
                         break
+                    elif filter_name in af:
+                        filter_condition = af[filter_name]
+                        break
+            
+            if not filter_condition:
+                return False
             
             modified = False
             for item in doc[array_field]:
-                if filter_condition and not self._matches_array_filter(item, filter_condition):
-                    continue
-                
-                if target_field not in item:
-                    item[target_field] = []
-                elif not isinstance(item[target_field], list):
-                    continue
-                
-                item[target_field].append(value)
-                modified = True
+                if self._matches_condition(item, filter_condition):
+                    if target_field not in item:
+                        item[target_field] = []
+                    elif not isinstance(item[target_field], list):
+                        continue
+                    
+                    item[target_field].append(value)
+                    modified = True
             
             return modified
         
-        def _matches_condition(self, item: Any, condition: Dict[str, Any]) -> bool:
-            if not isinstance(item, dict):
+        def _matches_condition(self, item: Dict[str, Any], condition: Dict[str, Any]) -> bool:
+            """Check if item matches condition."""
+            if not isinstance(item, dict) or not isinstance(condition, dict):
                 return item == condition
             
-            if '$or' in condition:
-                return any(self._matches_condition(item, sub_cond) for sub_cond in condition['$or'])
-            
             for key, value in condition.items():
-                if key.startswith('$'):
-                    continue
-                if key not in item or item[key] != value:
+                if key == '$or':
+                    if not any(self._matches_condition(item, sub_cond) for sub_cond in value):
+                        return False
+                elif key not in item or item[key] != value:
                     return False
             
             return True
-        
-        def _matches_array_filter(self, item: Dict[str, Any], filter_condition: Dict[str, Any]) -> bool:
-            for key, value in filter_condition.items():
-                if '.' in key:
-                    keys = key.split('.')
-                    current = item
-                    for k in keys:
-                        if not isinstance(current, dict) or k not in current:
-                            return False
-                        current = current[k]
-                    if current != value:
-                        return False
-                else:
-                    if key not in item or item[key] != value:
-                        return False
-            return True
-        
-        def count_documents(self, query: Dict[str, Any] = None) -> int:
-            results = self.service.query_documents(filters=query or {})
-            return len(results)
-        
-        def create_index(self, *args, **kwargs):
-            pass
     
     return DynamoDBCollectionWrapper(service, collection_name)
